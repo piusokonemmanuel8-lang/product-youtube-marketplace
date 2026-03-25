@@ -1,8 +1,11 @@
 console.log('LOADED APP FILE FROM SRC/APP.JS');
 
 const express = require('express');
+const cors = require('cors');
+
 const authRoutes = require('./routes/authRoutes');
 const channelRoutes = require('./routes/channelRoutes');
+const creatorProfileRoutes = require('./routes/creatorProfileRoutes');
 const channelSubscriptionRoutes = require('./routes/channelSubscriptionRoutes');
 const videoRoutes = require('./routes/videoRoutes');
 const videoReactionRoutes = require('./routes/videoReactionRoutes');
@@ -31,6 +34,16 @@ const adSkipRoutes = require('./routes/adSkipRoutes');
 
 const app = express();
 
+app.use(cors({
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'http://localhost:5176',
+  ],
+  credentials: true,
+}));
+
 app.use(express.json());
 
 app.get('/', (req, res) => {
@@ -47,6 +60,7 @@ app.get('/api/auth/test-root', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/channels', channelRoutes);
+app.use('/api/creator', creatorProfileRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api', videoReactionRoutes);
 app.use('/api', commentRoutes);

@@ -1,5 +1,10 @@
+const path = require('path');
 const crypto = require('crypto');
+const { PutObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
 const pool = require('../config/db');
+const s3 = require('../config/s3');
 
 function normalizeBuyNowUrl(url) {
   if (url === undefined || url === null) {
@@ -176,6 +181,59 @@ function canPostBuyNowLink(marketplaceAuth, buyNowUrl) {
     allowed: true,
     linkType: 'external',
   };
+}
+
+async function createVideoUploadUrl(req, res) {
+  try {
+    const userId = req.user.id;
+    const { fileName, contentType, folder } = req.body;
+
+    if (!fileName || !contentType) {
+      return res.status(400).json({
+        message: 'fileName and contentType are required',
+      });
+    }
+
+    const creatorProfile = await getCreatorProfileByUserId(userId);
+
+    if (!creatorProfile) {
+      return res.status(403).json({
+        message: 'Only creators can upload videos',
+      });
+    }
+
+    const ext = path.extname(fileName) || '';
+    const safeFolder = folder
+      ? String(folder).trim().replace(/^\/+|\/+$/g, '')
+      : 'videos';
+
+    const objectKey = `${safeFolder}/${creatorProfile.id}/${Date.now()}-${crypto.randomUUID()}${ext}`;
+
+    const command = new PutObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET,
+      Key: objectKey,
+      ContentType: contentType,
+    });
+
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 900 });
+
+    const fileUrl = process.env.AWS_CLOUDFRONT_URL
+      ? `${process.env.AWS_CLOUDFRONT_URL.replace(/\/$/, '')}/${objectKey}`
+      : `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${objectKey}`;
+
+    return res.status(200).json({
+      message: 'Upload URL created successfully',
+      uploadUrl,
+      key: objectKey,
+      fileUrl,
+      expiresIn: 900,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to create upload URL',
+      error: error.message,
+    });
+  }
 }
 
 async function createVideo(req, res) {
@@ -624,6 +682,7 @@ async function deleteMyVideo(req, res) {
 }
 
 module.exports = {
+  createVideoUploadUrl,
   createVideo,
   getMyVideos,
   getVideoBySlug,
