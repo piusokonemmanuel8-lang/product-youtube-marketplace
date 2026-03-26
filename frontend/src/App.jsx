@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import './App.css';
 
 import HomePage from './pages/HomePage';
@@ -14,36 +14,63 @@ import MyVideosPage from './pages/MyVideosPage';
 import CreatorAnalyticsPage from './pages/CreatorAnalyticsPage';
 import CreatorEarningsPage from './pages/CreatorEarningsPage';
 import CreatorPayoutPage from './pages/CreatorPayoutPage';
+import CreatorMarketplaceAuthPage from './pages/CreatorMarketplaceAuthPage';
+import AdminDashboardPage from './pages/AdminDashboardPage';
 
 function App() {
-  const path = window.location.pathname;
+  const getCurrentPath = () => {
+    const rawPath = window.location.pathname || '/';
+    const normalizedPath = rawPath.replace(/\/+$/, '') || '/';
+    return normalizedPath;
+  };
 
-  if (path === '/login') {
-    return <LoginPage />;
+  const [path, setPath] = useState(getCurrentPath());
+
+  useEffect(() => {
+    const updatePath = () => {
+      setPath(getCurrentPath());
+    };
+
+    const originalPushState = window.history.pushState;
+    const originalReplaceState = window.history.replaceState;
+
+    window.history.pushState = function (...args) {
+      originalPushState.apply(window.history, args);
+      updatePath();
+    };
+
+    window.history.replaceState = function (...args) {
+      originalReplaceState.apply(window.history, args);
+      updatePath();
+    };
+
+    window.addEventListener('popstate', updatePath);
+
+    return () => {
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
+      window.removeEventListener('popstate', updatePath);
+    };
+  }, []);
+
+  if (path === '/admin-dashboard') {
+    return <AdminDashboardPage />;
   }
 
-  if (path === '/register') {
-    return <RegisterPage />;
-  }
-
-  if (path === '/watch') {
-    return <WatchPage />;
-  }
-
-  if (path === '/channel') {
-    return <ChannelPage />;
+  if (path === '/creator-marketplace-auth') {
+    return <CreatorMarketplaceAuthPage />;
   }
 
   if (path === '/creator-dashboard') {
     return <CreatorDashboardPage />;
   }
 
-  if (path === '/become-creator') {
-    return <BecomeCreatorPage />;
-  }
-
   if (path === '/create-channel') {
     return <CreateChannelPage />;
+  }
+
+  if (path === '/become-creator') {
+    return <BecomeCreatorPage />;
   }
 
   if (path === '/upload-video') {
@@ -64,6 +91,22 @@ function App() {
 
   if (path === '/creator-payout') {
     return <CreatorPayoutPage />;
+  }
+
+  if (path === '/login') {
+    return <LoginPage />;
+  }
+
+  if (path === '/register') {
+    return <RegisterPage />;
+  }
+
+  if (path === '/watch') {
+    return <WatchPage />;
+  }
+
+  if (path === '/channel') {
+    return <ChannelPage />;
   }
 
   return <HomePage />;

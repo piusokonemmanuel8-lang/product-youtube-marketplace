@@ -435,6 +435,183 @@ async function getMyVideos(req, res) {
   }
 }
 
+async function getPublicVideos(req, res) {
+  try {
+    const limit = Number(req.query.limit) > 0 ? Number(req.query.limit) : 24;
+
+    const [videos] = await pool.query(
+      `SELECT 
+        v.*,
+        c.channel_name,
+        c.channel_handle,
+        c.channel_slug
+       FROM videos v
+       LEFT JOIN channels c ON v.channel_id = c.id
+       WHERE v.visibility = 'public'
+         AND v.status = 'published'
+         AND v.moderation_status = 'approved'
+       ORDER BY 
+         COALESCE(v.published_at, v.created_at) DESC,
+         v.id DESC
+       LIMIT ?`,
+      [limit]
+    );
+
+    return res.status(200).json({
+      videos,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to fetch public videos',
+      error: error.message,
+    });
+  }
+}
+
+async function getAdminVideos(req, res) {
+  try {
+    const status = req.query.status ? String(req.query.status).trim() : '';
+    const moderationStatus = req.query.moderation_status
+      ? String(req.query.moderation_status).trim()
+      : '';
+    const limit = Number(req.query.limit) > 0 ? Number(req.query.limit) : 100;
+
+    let sql = `
+      SELECT
+        v.*,
+        c.channel_name,
+        c.channel_handle,
+        c.channel_slug
+      FROM videos v
+      LEFT JOIN channels c ON v.channel_id = c.id
+      WHERE 1 = 1
+    `;
+
+    const params = [];
+
+    if (status) {
+      sql += ' AND v.status = ?';
+      params.push(status);
+    }
+
+    if (moderationStatus) {
+      sql += ' AND v.moderation_status = ?';
+      params.push(moderationStatus);
+    }
+
+    sql += `
+      ORDER BY COALESCE(v.published_at, v.created_at) DESC, v.id DESC
+      LIMIT ?
+    `;
+    params.push(limit);
+
+    const [videos] = await pool.query(sql, params);
+
+    return res.status(200).json({
+      videos,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to fetch admin videos',
+      error: error.message,
+    });
+  }
+}
+
+async function getAdminVideoById(req, res) {
+  try {
+    const { id } = req.params;
+
+    const [videos] = await pool.query(
+      `SELECT
+        v.*,
+        c.channel_name,
+        c.channel_handle,
+        c.channel_slug
+       FROM videos v
+       LEFT JOIN channels c ON v.channel_id = c.id
+       WHERE v.id = ?
+       LIMIT 1`,
+      [id]
+    );
+
+    if (!videos.length) {
+      return res.status(404).json({
+        message: 'Video not found',
+      });
+    }
+
+    return res.status(200).json({
+      video: videos[0],
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to fetch admin video',
+      error: error.message,
+    });
+  }
+}
+
+async function updateAdminVideoStatus(req, res) {
+  try {
+    const { id } = req.params;
+    const { status, moderation_status, visibility, published_at } = req.body;
+
+    const [videos] = await pool.query(
+      'SELECT * FROM videos WHERE id = ? LIMIT 1',
+      [id]
+    );
+
+    if (!videos.length) {
+      return res.status(404).json({
+        message: 'Video not found',
+      });
+    }
+
+    const currentVideo = videos[0];
+
+    const finalStatus = status || currentVideo.status;
+    const finalModerationStatus = moderation_status || currentVideo.moderation_status;
+    const finalVisibility = visibility || currentVideo.visibility;
+
+    let finalPublishedAt = currentVideo.published_at;
+
+    if (published_at !== undefined) {
+      finalPublishedAt = published_at;
+    } else if (finalStatus === 'published' && !currentVideo.published_at) {
+      finalPublishedAt = new Date();
+    }
+
+    await pool.query(
+      `UPDATE videos
+       SET status = ?, moderation_status = ?, visibility = ?, published_at = ?
+       WHERE id = ?`,
+      [
+        finalStatus,
+        finalModerationStatus,
+        finalVisibility,
+        finalPublishedAt,
+        currentVideo.id,
+      ]
+    );
+
+    const [updatedVideos] = await pool.query(
+      'SELECT * FROM videos WHERE id = ? LIMIT 1',
+      [currentVideo.id]
+    );
+
+    return res.status(200).json({
+      message: 'Admin video status updated successfully',
+      video: updatedVideos[0],
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to update admin video status',
+      error: error.message,
+    });
+  }
+}
+
 async function getVideoBySlug(req, res) {
   try {
     const { slug } = req.params;
@@ -681,11 +858,44 @@ async function deleteMyVideo(req, res) {
   }
 }
 
+async function deleteAdminVideo(req, res) {
+  try {
+    const { id } = req.params;
+
+    const [videos] = await pool.query(
+      'SELECT * FROM videos WHERE id = ? LIMIT 1',
+      [id]
+    );
+
+    if (!videos.length) {
+      return res.status(404).json({
+        message: 'Video not found',
+      });
+    }
+
+    await pool.query('DELETE FROM videos WHERE id = ?', [videos[0].id]);
+
+    return res.status(200).json({
+      message: 'Admin video deleted successfully',
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to delete admin video',
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   createVideoUploadUrl,
   createVideo,
   getMyVideos,
+  getPublicVideos,
+  getAdminVideos,
+  getAdminVideoById,
+  updateAdminVideoStatus,
   getVideoBySlug,
   updateMyVideo,
   deleteMyVideo,
+  deleteAdminVideo,
 };

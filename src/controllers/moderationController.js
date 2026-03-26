@@ -100,12 +100,24 @@ async function reviewModerationItem(req, res) {
     );
 
     if (item.entity_type === 'video') {
-      await pool.query(
-        `UPDATE videos
-         SET moderation_status = ?
-         WHERE id = ?`,
-        [moderation_status, item.entity_id]
-      );
+      if (moderation_status === 'approved') {
+        await pool.query(
+          `UPDATE videos
+           SET moderation_status = 'approved',
+               status = 'published',
+               published_at = COALESCE(published_at, NOW())
+           WHERE id = ?`,
+          [item.entity_id]
+        );
+      } else {
+        await pool.query(
+          `UPDATE videos
+           SET moderation_status = 'rejected',
+               status = 'draft'
+           WHERE id = ?`,
+          [item.entity_id]
+        );
+      }
     }
 
     if (item.entity_type === 'comment') {

@@ -1,41 +1,87 @@
-import React from 'react';
-
-const videos = [
-  {
-    id: 1,
-    title: 'Best Wireless Earbuds Under $50',
-    status: 'Published',
-    views: '3.4K',
-    clicks: '214',
-    date: 'Mar 20, 2026',
-  },
-  {
-    id: 2,
-    title: 'Top 5 Budget Smart Watches',
-    status: 'Pending Review',
-    views: '1.1K',
-    clicks: '98',
-    date: 'Mar 18, 2026',
-  },
-  {
-    id: 3,
-    title: 'Amazon Finds You Will Actually Use',
-    status: 'Draft',
-    views: '—',
-    clicks: '—',
-    date: 'Mar 15, 2026',
-  },
-  {
-    id: 4,
-    title: 'Best Ring Light for Beginners',
-    status: 'Rejected',
-    views: '—',
-    clicks: '—',
-    date: 'Mar 12, 2026',
-  },
-];
+import React, { useEffect, useMemo, useState } from 'react';
 
 function MyVideosPage() {
+  const [videos, setVideos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All Status');
+
+  useEffect(() => {
+    fetchMyVideos();
+  }, []);
+
+  async function fetchMyVideos() {
+    try {
+      setLoading(true);
+      setError('');
+
+      const token =
+        localStorage.getItem('token') ||
+        localStorage.getItem('videogad_token') ||
+        localStorage.getItem('authToken');
+
+      const response = await fetch('/api/videos/me', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to fetch videos');
+      }
+
+      setVideos(Array.isArray(data.videos) ? data.videos : []);
+    } catch (err) {
+      setError(err.message || 'Something went wrong');
+      setVideos([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function formatDate(dateValue) {
+    if (!dateValue) return '—';
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return '—';
+
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
+  function getVideoStatus(video) {
+    if (video?.moderation_status === 'pending') return 'Pending Review';
+    if (video?.moderation_status === 'rejected') return 'Rejected';
+    if (video?.status === 'published') return 'Published';
+    if (video?.status === 'draft') return 'Draft';
+    return video?.status || 'Unknown';
+  }
+
+  function getStatusClass(status) {
+    return status.toLowerCase().replace(/\s+/g, '-');
+  }
+
+  const filteredVideos = useMemo(() => {
+    return videos.filter((video) => {
+      const status = getVideoStatus(video);
+      const matchesSearch = (video.title || '')
+        .toLowerCase()
+        .includes(search.toLowerCase());
+
+      const matchesStatus =
+        statusFilter === 'All Status' || status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [videos, search, statusFilter]);
+
   return (
     <div className="videogad-myvideos-page">
       <div className="videogad-myvideos-card">
@@ -43,7 +89,7 @@ function MyVideosPage() {
           <div>
             <p className="eyebrow">Creator Library</p>
             <h1>My Videos</h1>
-            <span>Manage all uploaded videos, approval status, views, and product clicks.</span>
+            <span>Manage all uploaded videos, approval status, and dates.</span>
           </div>
 
           <div className="myvideos-header-actions">
@@ -53,8 +99,17 @@ function MyVideosPage() {
         </div>
 
         <div className="myvideos-toolbar">
-          <input type="text" placeholder="Search videos" />
-          <select>
+          <input
+            type="text"
+            placeholder="Search videos"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
             <option>All Status</option>
             <option>Published</option>
             <option>Pending Review</option>
@@ -63,45 +118,114 @@ function MyVideosPage() {
           </select>
         </div>
 
-        <div className="myvideos-table-wrap">
-          <div className="myvideos-table-head">
-            <span>Video</span>
-            <span>Status</span>
-            <span>Views</span>
-            <span>Clicks</span>
-            <span>Date</span>
-            <span>Actions</span>
-          </div>
-
+        {loading ? (
           <div className="myvideos-table-body">
-            {videos.map((video) => (
-              <div className="myvideos-row" key={video.id}>
-                <div className="myvideos-video-cell">
-                  <div className="myvideos-thumb">Thumb</div>
-                  <div>
-                    <h4>{video.title}</h4>
-                    <p>Video ID: VG-{video.id}00{video.id}</p>
-                  </div>
-                </div>
-
+            <div className="myvideos-row">
+              <div className="myvideos-video-cell">
                 <div>
-                  <span className={`status-badge ${video.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                    {video.status}
-                  </span>
-                </div>
-
-                <div className="myvideos-muted">{video.views}</div>
-                <div className="myvideos-muted">{video.clicks}</div>
-                <div className="myvideos-muted">{video.date}</div>
-
-                <div className="myvideos-actions">
-                  <button type="button">Edit</button>
-                  <button type="button">View</button>
+                  <h4>Loading videos...</h4>
                 </div>
               </div>
-            ))}
+            </div>
           </div>
-        </div>
+        ) : error ? (
+          <div className="myvideos-table-body">
+            <div className="myvideos-row">
+              <div className="myvideos-video-cell">
+                <div>
+                  <h4>{error}</h4>
+                  <p>
+                    <button type="button" onClick={fetchMyVideos}>
+                      Retry
+                    </button>
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="myvideos-table-wrap">
+            <div className="myvideos-table-head">
+              <span>Video</span>
+              <span>Status</span>
+              <span>Visibility</span>
+              <span>Published</span>
+              <span>Date</span>
+              <span>Actions</span>
+            </div>
+
+            <div className="myvideos-table-body">
+              {filteredVideos.length === 0 ? (
+                <div className="myvideos-row">
+                  <div className="myvideos-video-cell">
+                    <div>
+                      <h4>No videos found</h4>
+                      <p>Your uploaded videos will show here.</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                filteredVideos.map((video) => {
+                  const status = getVideoStatus(video);
+
+                  return (
+                    <div className="myvideos-row" key={video.id}>
+                      <div className="myvideos-video-cell">
+                        <div className="myvideos-thumb">
+                          {video.thumbnail_key ? 'Image' : 'Thumb'}
+                        </div>
+                        <div>
+                          <h4>{video.title || 'Untitled Video'}</h4>
+                          <p>Video ID: VG-{video.id}</p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className={`status-badge ${getStatusClass(status)}`}>
+                          {status}
+                        </span>
+                      </div>
+
+                      <div className="myvideos-muted">
+                        {video.visibility || '—'}
+                      </div>
+
+                      <div className="myvideos-muted">
+                        {formatDate(video.published_at)}
+                      </div>
+
+                      <div className="myvideos-muted">
+                        {formatDate(video.created_at)}
+                      </div>
+
+                      <div className="myvideos-actions">
+                        <a
+                          href={`/upload-video?edit=${video.id}`}
+                          className="myvideos-action-link"
+                        >
+                          Edit
+                        </a>
+
+                        {video.slug && video.status === 'published' ? (
+                          <a
+                            href={`/watch/${video.slug}`}
+                            className="myvideos-action-link"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          <span className="myvideos-action-link disabled-link">
+                            View
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

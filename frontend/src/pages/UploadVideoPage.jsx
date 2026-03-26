@@ -19,6 +19,7 @@ function normalizeArrayResponse(data) {
   if (Array.isArray(data?.categories)) return data.categories;
   if (Array.isArray(data?.tags)) return data.tags;
   if (Array.isArray(data?.plans)) return data.plans;
+  if (Array.isArray(data?.videos)) return data.videos;
   return [];
 }
 
@@ -37,7 +38,20 @@ function isExternalUrl(url = '') {
   }
 }
 
+function getToken() {
+  return (
+    localStorage.getItem('token') ||
+    localStorage.getItem('videogad_token') ||
+    localStorage.getItem('authToken') ||
+    ''
+  );
+}
+
 function UploadVideoPage() {
+  const searchParams = new URLSearchParams(window.location.search);
+  const editVideoId = searchParams.get('edit');
+  const isEditMode = Boolean(editVideoId);
+
   const [categories, setCategories] = useState([]);
   const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +66,7 @@ function UploadVideoPage() {
   const [showExternalPlans, setShowExternalPlans] = useState(false);
   const [plansLoading, setPlansLoading] = useState(false);
   const [subscribingPlanId, setSubscribingPlanId] = useState('');
+  const [editingVideo, setEditingVideo] = useState(null);
 
   const [formData, setFormData] = useState({
     category_id: '',
@@ -89,25 +104,76 @@ function UploadVideoPage() {
         setCategories(categoriesData);
         setTags(tagsData);
 
-        if (categoriesData.length) {
+        if (myChannel?.id) {
+          setChannelId(String(myChannel.id));
+        }
+
+        if (isEditMode) {
+          const token = getToken();
+
+          const response = await fetch('/api/videos/me', {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.message || 'Failed to load video for editing');
+          }
+
+          const myVideos = normalizeArrayResponse(data);
+          const currentVideo = myVideos.find(
+            (video) => String(video.id) === String(editVideoId)
+          );
+
+          if (!currentVideo) {
+            throw new Error('Video not found for editing');
+          }
+
+          setEditingVideo(currentVideo);
+
+          setFormData({
+            category_id: currentVideo.category_id ? String(currentVideo.category_id) : '',
+            title: currentVideo.title || '',
+            slug: currentVideo.slug || '',
+            description: currentVideo.description || '',
+            buy_link: currentVideo.buy_now_url || currentVideo.buy_link || '',
+            duration_seconds: currentVideo.duration_seconds
+              ? String(currentVideo.duration_seconds)
+              : '120',
+            visibility: currentVideo.visibility || 'public',
+            comments_enabled:
+              currentVideo.comments_enabled === 1 ||
+              currentVideo.comments_enabled === true,
+            buy_now_enabled:
+              currentVideo.buy_now_enabled === 1 ||
+              currentVideo.buy_now_enabled === true,
+            is_monetized:
+              currentVideo.is_monetized === 1 ||
+              currentVideo.is_monetized === true,
+            selectedTags: [],
+            send_to_moderation: false,
+            video_file: null,
+          });
+        } else if (categoriesData.length) {
           setFormData((prev) => ({
             ...prev,
             category_id: String(categoriesData[0].id),
           }));
         }
-
-        if (myChannel?.id) {
-          setChannelId(String(myChannel.id));
-        }
-      } catch {
-        setErrorMessage('Failed to load upload form data');
+      } catch (error) {
+        setErrorMessage(error?.message || 'Failed to load upload form data');
       } finally {
         setLoading(false);
       }
     }
 
     loadFormData();
-  }, []);
+  }, [editVideoId, isEditMode]);
 
   const tagOptions = useMemo(() => normalizeArrayResponse(tags), [tags]);
   const categoryOptions = useMemo(() => normalizeArrayResponse(categories), [categories]);
@@ -194,13 +260,34 @@ function UploadVideoPage() {
     }
   }
 
+  async function updateVideo(videoId, payload) {
+    const token = getToken();
+
+    const response = await fetch(`/api/videos/${videoId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to update video');
+    }
+
+    return data;
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
     setSubmitting(true);
     setPageMessage('');
     setErrorMessage('');
     setShowExternalPlans(false);
-    setUploadStage('Preparing upload...');
+    setUploadStage(isEditMode ? 'Saving changes...' : 'Preparing upload...');
     setUploadPercent(0);
 
     try {
@@ -208,41 +295,46 @@ function UploadVideoPage() {
         throw new Error('No creator channel found. Create your channel first.');
       }
 
-      if (!formData.video_file) {
+      let videoKey = editingVideo?.video_key || '';
+
+      if (!isEditMode && !formData.video_file) {
         throw new Error('Please choose a video file');
       }
 
-      setUploadStage('Requesting upload URL...');
+      if (formData.video_file) {
+        setUploadStage('Requesting upload URL...');
 
-      const uploadUrlResponse = await requestVideoUploadUrl({
-        fileName: formData.video_file.name,
-        contentType: formData.video_file.type || 'video/mp4',
-        folder: 'videos',
-      });
+        const uploadUrlResponse = await requestVideoUploadUrl({
+          fileName: formData.video_file.name,
+          contentType: formData.video_file.type || 'video/mp4',
+          folder: 'videos',
+        });
 
-      const uploadUrl =
-        uploadUrlResponse?.uploadUrl ||
-        uploadUrlResponse?.data?.uploadUrl ||
-        uploadUrlResponse?.signedUrl;
+        const uploadUrl =
+          uploadUrlResponse?.uploadUrl ||
+          uploadUrlResponse?.data?.uploadUrl ||
+          uploadUrlResponse?.signedUrl;
 
-      const videoKey =
-        uploadUrlResponse?.key ||
-        uploadUrlResponse?.data?.key ||
-        uploadUrlResponse?.fileKey;
+        videoKey =
+          uploadUrlResponse?.key ||
+          uploadUrlResponse?.data?.key ||
+          uploadUrlResponse?.fileKey;
 
-      if (!uploadUrl || !videoKey) {
-        throw new Error('Upload URL response is incomplete');
+        if (!uploadUrl || !videoKey) {
+          throw new Error('Upload URL response is incomplete');
+        }
+
+        setUploadStage('Uploading video file...');
+        setUploadPercent(0);
+
+        await uploadFileToSignedUrl(uploadUrl, formData.video_file, (percent) => {
+          setUploadPercent(percent);
+        });
+
+        setUploadPercent(100);
       }
 
-      setUploadStage('Uploading video file...');
-      setUploadPercent(0);
-
-      await uploadFileToSignedUrl(uploadUrl, formData.video_file, (percent) => {
-        setUploadPercent(percent);
-      });
-
-      setUploadPercent(100);
-      setUploadStage('Saving video metadata...');
+      setUploadStage(isEditMode ? 'Saving video changes...' : 'Saving video metadata...');
 
       const buyNowUrl = formData.buy_link.trim();
       const externalLink = isExternalUrl(buyNowUrl);
@@ -253,9 +345,6 @@ function UploadVideoPage() {
         title: formData.title.trim(),
         slug: formData.slug.trim(),
         description: formData.description.trim(),
-        source_type: 'uploaded',
-        storage_provider: 's3',
-        video_key: videoKey,
         duration_seconds: Number(formData.duration_seconds || 0),
         visibility: formData.visibility,
         comments_enabled: formData.comments_enabled ? 1 : 0,
@@ -264,14 +353,30 @@ function UploadVideoPage() {
         buy_now_url: buyNowUrl || null,
       };
 
-      const createdVideo = await createVideo(videoPayload);
-      const videoId =
-        createdVideo?.id ||
-        createdVideo?.video?.id ||
-        createdVideo?.data?.id;
+      if (videoKey) {
+        videoPayload.video_key = videoKey;
+      }
 
-      if (!videoId) {
-        throw new Error('Video metadata saved but video id was not returned');
+      let videoId = '';
+
+      if (isEditMode) {
+        await updateVideo(editVideoId, videoPayload);
+        videoId = editVideoId;
+      } else {
+        const createdVideo = await createVideo({
+          ...videoPayload,
+          source_type: 'uploaded',
+          storage_provider: 's3',
+        });
+
+        videoId =
+          createdVideo?.id ||
+          createdVideo?.video?.id ||
+          createdVideo?.data?.id;
+
+        if (!videoId) {
+          throw new Error('Video metadata saved but video id was not returned');
+        }
       }
 
       if (formData.selectedTags.length) {
@@ -281,32 +386,38 @@ function UploadVideoPage() {
         }).catch(() => null);
       }
 
-      if (formData.send_to_moderation) {
+      if (!isEditMode && formData.send_to_moderation) {
         setUploadStage('Sending to moderation...');
         await createModerationQueue({
           video_id: videoId,
         }).catch(() => null);
       }
 
-      setPageMessage('Video uploaded and saved successfully.');
-      setUploadStage('Upload complete');
+      setPageMessage(
+        isEditMode
+          ? 'Video updated successfully.'
+          : 'Video uploaded and saved successfully.'
+      );
+      setUploadStage(isEditMode ? 'Update complete' : 'Upload complete');
       setUploadPercent(100);
 
-      setFormData({
-        category_id: categoryOptions[0] ? String(categoryOptions[0].id) : '',
-        title: '',
-        slug: '',
-        description: '',
-        buy_link: '',
-        duration_seconds: '120',
-        visibility: 'public',
-        comments_enabled: true,
-        buy_now_enabled: true,
-        is_monetized: false,
-        selectedTags: [],
-        send_to_moderation: true,
-        video_file: null,
-      });
+      if (!isEditMode) {
+        setFormData({
+          category_id: categoryOptions[0] ? String(categoryOptions[0].id) : '',
+          title: '',
+          slug: '',
+          description: '',
+          buy_link: '',
+          duration_seconds: '120',
+          visibility: 'public',
+          comments_enabled: true,
+          buy_now_enabled: true,
+          is_monetized: false,
+          selectedTags: [],
+          send_to_moderation: true,
+          video_file: null,
+        });
+      }
 
       if (externalLink) {
         setShowExternalPlans(false);
@@ -315,18 +426,18 @@ function UploadVideoPage() {
       const backendMessage =
         error?.response?.data?.message ||
         error?.message ||
-        'Failed to create video';
+        (isEditMode ? 'Failed to update video' : 'Failed to create video');
 
       const buyNowUrl = formData.buy_link.trim();
       const externalLink = isExternalUrl(buyNowUrl);
 
-      if (error?.response?.status === 403 && externalLink) {
+      if (!isEditMode && error?.response?.status === 403 && externalLink) {
         setErrorMessage(backendMessage);
         setUploadStage('External posting plan required');
         await loadExternalPlanData();
       } else {
         setErrorMessage(backendMessage);
-        setUploadStage(uploadStage || 'Upload failed');
+        setUploadStage(uploadStage || (isEditMode ? 'Update failed' : 'Upload failed'));
       }
     } finally {
       setSubmitting(false);
@@ -336,7 +447,9 @@ function UploadVideoPage() {
   if (loading) {
     return (
       <div className="upload-loading-page">
-        <div className="upload-loading-card">Loading upload form...</div>
+        <div className="upload-loading-card">
+          {isEditMode ? 'Loading video editor...' : 'Loading upload form...'}
+        </div>
       </div>
     );
   }
@@ -355,7 +468,7 @@ function UploadVideoPage() {
         {(submitting || uploadStage || uploadPercent > 0) ? (
           <div className="upload-progress-card">
             <div className="upload-progress-top">
-              <strong>{uploadStage || 'Uploading...'}</strong>
+              <strong>{uploadStage || (isEditMode ? 'Saving...' : 'Uploading...')}</strong>
               <span>{uploadPercent}%</span>
             </div>
             <div className="upload-progress-bar">
@@ -369,9 +482,11 @@ function UploadVideoPage() {
 
         <div className="upload-header">
           <p className="eyebrow">Creator Studio</p>
-          <h1>Upload Video</h1>
+          <h1>{isEditMode ? 'Edit Video' : 'Upload Video'}</h1>
           <span>
-            Upload a video file manually, attach category and tags, and optionally send it to moderation.
+            {isEditMode
+              ? 'Update your submitted video details here.'
+              : 'Upload a video file manually, attach category and tags, and optionally send it to moderation.'}
           </span>
         </div>
 
@@ -485,7 +600,7 @@ function UploadVideoPage() {
           </div>
 
           <div className="form-group">
-            <label>Video File Upload</label>
+            <label>{isEditMode ? 'Replace Video File (Optional)' : 'Video File Upload'}</label>
             <input
               type="file"
               name="video_file"
@@ -497,6 +612,10 @@ function UploadVideoPage() {
                 <strong>{formData.video_file.name}</strong>
                 <span>{uploadStage || 'Ready to upload'}</span>
                 <span>{uploadPercent}%</span>
+              </div>
+            ) : isEditMode ? (
+              <div className="upload-file-meta">
+                <strong>Keeping current uploaded video file</strong>
               </div>
             ) : null}
           </div>
@@ -523,22 +642,26 @@ function UploadVideoPage() {
             </div>
           </div>
 
-          <div className="upload-options">
-            <label className="check-row">
-              <input
-                type="checkbox"
-                name="send_to_moderation"
-                checked={formData.send_to_moderation}
-                onChange={handleChange}
-              />
-              Send video to moderation queue after upload
-            </label>
-          </div>
+          {!isEditMode ? (
+            <div className="upload-options">
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  name="send_to_moderation"
+                  checked={formData.send_to_moderation}
+                  onChange={handleChange}
+                />
+                Send video to moderation queue after upload
+              </label>
+            </div>
+          ) : null}
 
           <div className="form-actions">
-            <a href="/creator-dashboard" className="ghost-btn">Dashboard</a>
+            <a href="/my-videos" className="ghost-btn">Back to My Videos</a>
             <button type="submit" className="primary-btn" disabled={submitting}>
-              {submitting ? 'Uploading...' : 'Upload Video'}
+              {submitting
+                ? (isEditMode ? 'Saving Changes...' : 'Uploading...')
+                : (isEditMode ? 'Save Changes' : 'Upload Video')}
             </button>
           </div>
         </form>

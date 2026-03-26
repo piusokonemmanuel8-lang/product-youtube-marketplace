@@ -1,44 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getCategories, getCategoryTree } from '../services/categoryService';
-
-const featuredVideos = [
-  {
-    id: 1,
-    title: 'Wireless Earbuds Review for Everyday Use',
-    creator: 'Tech Market Hub',
-    meta: '12K views • Feed endpoint pending',
-  },
-  {
-    id: 2,
-    title: 'Top Smart Watches You Can Buy This Month',
-    creator: 'Gadget Spot',
-    meta: '8.4K views • Feed endpoint pending',
-  },
-  {
-    id: 3,
-    title: 'Best Phone Accessories Worth Buying',
-    creator: 'Mobile Finds',
-    meta: '5.2K views • Feed endpoint pending',
-  },
-  {
-    id: 4,
-    title: 'Affordable Camera Gear for Creators',
-    creator: 'Creator Tools',
-    meta: '10K views • Feed endpoint pending',
-  },
-  {
-    id: 5,
-    title: 'Best Lighting Setup for Product Videos',
-    creator: 'Studio Market',
-    meta: '7.9K views • Feed endpoint pending',
-  },
-  {
-    id: 6,
-    title: 'Home Gadgets That Actually Make Sense',
-    creator: 'Daily Gadget Lab',
-    meta: '15K views • Feed endpoint pending',
-  },
-];
+import { getPublicVideos } from '../services/homeService';
 
 const shortsItems = [
   { id: 1, title: 'Mini Earbuds', views: '2.1K views' },
@@ -54,13 +16,42 @@ function normalizeArrayResponse(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.data)) return data.data;
   if (Array.isArray(data?.categories)) return data.categories;
+  if (Array.isArray(data?.videos)) return data.videos;
   return [];
+}
+
+function formatVideoMeta(video) {
+  const creator =
+    video?.channel_name ||
+    video?.creator_name ||
+    video?.creator ||
+    'VideoGad Creator';
+
+  const dateValue = video?.published_at || video?.created_at;
+  let dateText = 'Recently added';
+
+  if (dateValue) {
+    const date = new Date(dateValue);
+    if (!Number.isNaN(date.getTime())) {
+      dateText = date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    }
+  }
+
+  return {
+    creator,
+    meta: dateText,
+  };
 }
 
 function HomePage() {
   const [categories, setCategories] = useState([]);
   const [categoryTreeCount, setCategoryTreeCount] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [featuredVideos, setFeaturedVideos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [theme, setTheme] = useState('light');
@@ -71,16 +62,19 @@ function HomePage() {
       setErrorMessage('');
 
       try {
-        const [categoriesResponse, treeResponse] = await Promise.all([
+        const [categoriesResponse, treeResponse, videosResponse] = await Promise.all([
           getCategories(),
           getCategoryTree(),
+          getPublicVideos({ limit: 12 }),
         ]);
 
         const categoriesList = normalizeArrayResponse(categoriesResponse);
         const treeList = normalizeArrayResponse(treeResponse);
+        const publicVideosList = normalizeArrayResponse(videosResponse);
 
         setCategories(categoriesList);
         setCategoryTreeCount(treeList.length);
+        setFeaturedVideos(publicVideosList);
       } catch (error) {
         setErrorMessage(error.message || 'Failed to load homepage data');
       } finally {
@@ -103,6 +97,22 @@ function HomePage() {
 
     return ['All', ...names.filter(Boolean)];
   }, [categories]);
+
+  const filteredVideos = useMemo(() => {
+    if (selectedCategory === 'All') {
+      return featuredVideos;
+    }
+
+    return featuredVideos.filter((video) => {
+      const categoryName =
+        video?.category_name ||
+        video?.category ||
+        video?.category_title ||
+        '';
+
+      return String(categoryName).toLowerCase() === String(selectedCategory).toLowerCase();
+    });
+  }, [featuredVideos, selectedCategory]);
 
   return (
     <div className={`home-layout ${theme === 'dark' ? 'home-layout-dark' : 'home-layout-light'}`}>
@@ -211,27 +221,60 @@ function HomePage() {
           <section className="vg-home-section-head">
             <div>
               <h2>Featured Videos</h2>
-              <p>Homepage layout ready. Public feed endpoint still pending.</p>
+              <p>
+                {filteredVideos.length
+                  ? 'Live videos from the real public feed.'
+                  : 'No published public videos available yet.'}
+              </p>
             </div>
           </section>
 
           <section className="vg-video-grid">
-            {featuredVideos.map((video) => (
-              <div className="vg-video-card" key={video.id}>
-                <div className="vg-video-thumb">Featured Video</div>
+            {filteredVideos.length ? (
+              filteredVideos.map((video) => {
+                const details = formatVideoMeta(video);
 
-                <div className="vg-video-info">
-                  <h3>{video.title}</h3>
-                  <div className="vg-creator-name">{video.creator}</div>
-                  <div className="vg-meta-text">{video.meta}</div>
+                return (
+                  <div className="vg-video-card" key={video.id}>
+                    <div className="vg-video-thumb">
+                      {video.thumbnail_key ? 'Video Thumbnail' : 'Featured Video'}
+                    </div>
 
-                  <div className="vg-card-actions">
-                    <button type="button" className="vg-card-btn">Watch</button>
-                    <button type="button" className="vg-card-btn vg-card-btn-light">Buy Now</button>
+                    <div className="vg-video-info">
+                      <h3>{video.title || 'Untitled Video'}</h3>
+                      <div className="vg-creator-name">{details.creator}</div>
+                      <div className="vg-meta-text">{details.meta}</div>
+
+                      <div className="vg-card-actions">
+                        <a
+                          href={video.slug ? `/watch/${video.slug}` : '#'}
+                          className="vg-card-btn"
+                        >
+                          Watch
+                        </a>
+
+                        {video.buy_now_url ? (
+                          <a
+                            href={video.buy_now_url}
+                            className="vg-card-btn vg-card-btn-light"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Buy Now
+                          </a>
+                        ) : (
+                          <button type="button" className="vg-card-btn vg-card-btn-light">
+                            Buy Now
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                );
+              })
+            ) : (
+              <div className="home-state-message">No featured videos yet.</div>
+            )}
           </section>
 
           <section className="vg-home-section-head shorts-head">

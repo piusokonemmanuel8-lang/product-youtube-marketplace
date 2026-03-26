@@ -90,6 +90,7 @@ function CreatorDashboardPage() {
           <a href="/create-channel">{hasChannel ? 'Edit Channel' : 'Create Channel'}</a>
           <a href="/upload-video">Upload Video</a>
           <a href="/my-videos">My Videos</a>
+          <a href="/creator-marketplace-auth">Marketplace Auth</a>
           <a href="/creator-analytics">Analytics</a>
           <a href="/creator-earnings">Earnings</a>
           <a href="/creator-payout">Payout</a>
@@ -103,12 +104,6 @@ function CreatorDashboardPage() {
               <small>{channelSlug}</small>
             </div>
           ) : null}
-
-          <a href="/creator-marketplace-auth" className="creator-sidebar-auth-box">
-            <p className="creator-channel-label">Authentication</p>
-            <h4>Marketplace Auth</h4>
-            <span>Click to authenticate Supgad store</span>
-          </a>
         </nav>
       </aside>
 

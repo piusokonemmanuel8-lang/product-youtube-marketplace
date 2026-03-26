@@ -5,12 +5,24 @@ const {
   createVideoUploadUrl,
   createVideo,
   getMyVideos,
+  getPublicVideos,
+  getAdminVideos,
+  getAdminVideoById,
+  updateAdminVideoStatus,
   getVideoBySlug,
   updateMyVideo,
   deleteMyVideo,
+  deleteAdminVideo,
 } = require('../controllers/videoController');
 
-const { protect } = require('../middleware/authMiddleware');
+const { protect, adminOnly } = require('../middleware/authMiddleware');
+
+router.get('/public', getPublicVideos);
+
+router.get('/admin/all', protect, adminOnly, getAdminVideos);
+router.get('/admin/:id', protect, adminOnly, getAdminVideoById);
+router.put('/admin/:id/status', protect, adminOnly, updateAdminVideoStatus);
+router.delete('/admin/:id', protect, adminOnly, deleteAdminVideo);
 
 router.post('/upload-url', protect, createVideoUploadUrl);
 router.post('/', protect, createVideo);

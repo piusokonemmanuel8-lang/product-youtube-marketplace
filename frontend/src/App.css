@@ -2177,197 +2177,6 @@ select {
 }
 
 /* =========================
-   MY VIDEOS PAGE CSS
-========================= */
-
-.videogad-myvideos-page {
-  min-height: 100vh;
-  background: #0f1117;
-  color: #fff;
-  padding: 32px 20px;
-  display: flex;
-  justify-content: center;
-}
-
-.videogad-myvideos-card {
-  width: 100%;
-  max-width: 1150px;
-  background: #171c29;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 24px;
-  padding: 28px;
-}
-
-.myvideos-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-  flex-wrap: wrap;
-  margin-bottom: 22px;
-}
-
-.myvideos-header h1 {
-  margin: 8px 0;
-  font-size: 2rem;
-  line-height: 1.1;
-}
-
-.myvideos-header span {
-  color: #b6bed1;
-  display: block;
-  max-width: 620px;
-  line-height: 1.6;
-}
-
-.myvideos-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.myvideos-header-actions .ghost-btn,
-.myvideos-header-actions .primary-btn {
-  padding: 10px 16px;
-  border-radius: 12px;
-  font-size: 0.95rem;
-  font-weight: 700;
-  min-height: 42px;
-}
-
-.myvideos-toolbar {
-  display: grid;
-  grid-template-columns: 1fr 220px;
-  gap: 14px;
-  margin-bottom: 20px;
-}
-
-.myvideos-toolbar input,
-.myvideos-toolbar select {
-  width: 100%;
-  background: #111521;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #fff;
-  border-radius: 14px;
-  padding: 14px 16px;
-  outline: none;
-}
-
-.myvideos-table-wrap {
-  background: #111521;
-  border-radius: 20px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.myvideos-table-head,
-.myvideos-row {
-  display: grid;
-  grid-template-columns: 2.3fr 1.1fr 0.8fr 0.8fr 1fr 1fr;
-  gap: 14px;
-  align-items: center;
-  padding: 16px 18px;
-}
-
-.myvideos-table-head {
-  background: #0d111a;
-  color: #aeb7ca;
-  font-size: 0.92rem;
-  font-weight: 700;
-}
-
-.myvideos-row {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.myvideos-video-cell {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.myvideos-thumb {
-  width: 96px;
-  height: 58px;
-  background: linear-gradient(135deg, #252c3f, #1a2030);
-  border-radius: 12px;
-  color: #9ca8c7;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.8rem;
-  flex-shrink: 0;
-}
-
-.myvideos-video-cell h4 {
-  margin: 0 0 5px;
-  font-size: 0.98rem;
-  line-height: 1.25;
-}
-
-.myvideos-video-cell p,
-.myvideos-muted {
-  margin: 0;
-  color: #aeb7ca;
-  font-size: 0.92rem;
-}
-
-.myvideos-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.myvideos-actions button {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #171c29;
-  color: #fff;
-  border-radius: 10px;
-  padding: 9px 12px;
-  cursor: pointer;
-}
-
-@media (max-width: 900px) {
-  .myvideos-toolbar {
-    grid-template-columns: 1fr;
-  }
-
-  .myvideos-table-head {
-    display: none;
-  }
-
-  .myvideos-row {
-    grid-template-columns: 1fr;
-    align-items: flex-start;
-    padding: 16px;
-  }
-
-  .videogad-myvideos-card {
-    padding: 20px;
-  }
-}
-
-@media (max-width: 768px) {
-  .myvideos-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .myvideos-header-actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .myvideos-header-actions .ghost-btn,
-  .myvideos-header-actions .primary-btn {
-    min-height: 40px;
-    padding: 10px 14px;
-    border-radius: 12px;
-  }
-}
-
-/* =========================
    CREATOR ANALYTICS PAGE CSS
 ========================= */
 
@@ -4112,8 +3921,7 @@ select {
   .creator-payout-header-actions {
     width: 100%;
     justify-content: flex-start;
-  }
-}/* =========================
+  }/* =========================
    CREATE CHANNEL PAGE CSS
 ========================= */
 
@@ -4280,3 +4088,315 @@ select {
     width: 100%;
   }
 }
+
+/* Creator Dashboard Sidebar Scroll */
+
+.videogad-dashboard-sidebar {
+  overflow-y: auto;
+  padding-bottom: 32px;
+}
+
+/* Creator Dashboard Sidebar Navigation Buttons */
+
+.dashboard-nav-btn {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  padding: 14px 18px;
+  border-radius: 14px;
+}
+
+.videogad-dashboard-nav .dashboard-nav-btn.active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Creator Dashboard Sidebar Fix */
+
+.videogad-dashboard-sidebar {
+  overflow-y: auto;
+  padding-bottom: 32px;
+}
+
+.videogad-dashboard-nav a {
+  display: block;
+  text-decoration: none;
+}
+
+/* Creator Dashboard Sidebar Channel Card */
+
+.creator-channel-box {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.creator-channel-label {
+  margin: 0 0 8px;
+  font-size: 12px;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.creator-channel-box h4 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: #fff;
+}
+
+.creator-channel-box span,
+.creator-channel-box small {
+  display: block;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* Creator Dashboard Sidebar Authentication Card */
+
+.creator-sidebar-auth-box {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  display: block;
+  text-decoration: none;
+  box-sizing: border-box;
+  width: 100%;
+  cursor: pointer;
+}
+
+.creator-sidebar-auth-box h4 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: #fff;
+}
+
+.creator-sidebar-auth-box span {
+  display: block;
+  color: rgba(255, 255, 255, 0.75);
+}/* FILE: MyVideosPage.css */
+
+}/* =========================
+   MY VIDEOS PAGE CSS
+========================= */
+
+.videogad-myvideos-page {
+  min-height: 100vh;
+  background: #0f1117;
+  color: #fff;
+  padding: 32px 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.videogad-myvideos-card {
+  width: 100%;
+  max-width: 1150px;
+  background: #171c29;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 24px;
+  padding: 28px;
+}
+
+.myvideos-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+.myvideos-header h1 {
+  margin: 8px 0;
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.myvideos-header span {
+  color: #b6bed1;
+  display: block;
+  max-width: 620px;
+  line-height: 1.6;
+}
+
+.myvideos-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.myvideos-header-actions .ghost-btn,
+.myvideos-header-actions .primary-btn {
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  min-height: 42px;
+  text-decoration: none;
+}
+
+.myvideos-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.myvideos-toolbar input,
+.myvideos-toolbar select {
+  width: 100%;
+  background: #111521;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-radius: 14px;
+  padding: 14px 16px;
+  outline: none;
+}
+
+.myvideos-table-wrap {
+  background: #111521;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.myvideos-table-head,
+.myvideos-row {
+  display: grid;
+  grid-template-columns: 2.3fr 1.1fr 0.8fr 0.8fr 1fr 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 16px 18px;
+}
+
+.myvideos-table-head {
+  background: #0d111a;
+  color: #aeb7ca;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.myvideos-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.myvideos-video-cell {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.myvideos-thumb {
+  width: 96px;
+  height: 58px;
+  background: linear-gradient(135deg, #252c3f, #1a2030);
+  border-radius: 12px;
+  color: #9ca8c7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.myvideos-video-cell h4 {
+  margin: 0 0 5px;
+  font-size: 0.98rem;
+  line-height: 1.25;
+}
+
+.myvideos-video-cell p,
+.myvideos-muted {
+  margin: 0;
+  color: #aeb7ca;
+  font-size: 0.92rem;
+}
+
+.myvideos-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.myvideos-action-link {
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.myvideos-action-link:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+.myvideos-action-link:visited {
+  color: #ffffff;
+}
+
+.myvideos-action-link.disabled-link {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  text-decoration: none;
+}
+
+.myvideos-retry-btn {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #171c29;
+  color: #fff;
+  border-radius: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+@media (max-width: 900px) {
+  .myvideos-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .myvideos-table-head {
+    display: none;
+  }
+
+  .myvideos-row {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .videogad-myvideos-card {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .myvideos-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .myvideos-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .myvideos-header-actions .ghost-btn,
+  .myvideos-header-actions .primary-btn {
+    min-height: 40px;
+    padding: 10px 14px;
+    border-radius: 12px;
+  }
+}/* FILE: AdminDashboardApp.css */
+
