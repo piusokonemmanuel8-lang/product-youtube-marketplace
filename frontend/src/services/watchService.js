@@ -27,7 +27,7 @@ export async function getVideoReactions(videoId) {
 export async function addVideoReaction(videoId, payload) {
   return apiRequest(`/api/videos/${videoId}/reactions`, {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: payload,
   });
 }
 
@@ -46,14 +46,14 @@ export async function getVideoComments(videoId) {
 export async function addVideoComment(videoId, payload) {
   return apiRequest(`/api/videos/${videoId}/comments`, {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: payload,
   });
 }
 
 export async function updateComment(commentId, payload) {
   return apiRequest(`/api/comments/${commentId}`, {
     method: 'PUT',
-    body: JSON.stringify(payload),
+    body: payload,
   });
 }
 
@@ -84,7 +84,7 @@ export async function unsaveVideo(videoId) {
 export async function shareVideo(videoId, payload = {}) {
   return apiRequest(`/api/videos/${videoId}/share`, {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: payload,
   });
 }
 

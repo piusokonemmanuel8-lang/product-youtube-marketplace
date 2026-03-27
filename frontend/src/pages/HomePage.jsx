@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getCategories, getCategoryTree } from '../services/categoryService';
-import { getPublicVideos } from '../services/homeService';
+import { apiRequest } from '../services/api';
+import {
+  getPublicVideos,
+  getSavedVideos,
+  getWatchHistoryVideos,
+} from '../services/homeService';
+import './HomePage.css';
 
 const shortsItems = [
   { id: 1, title: 'Mini Earbuds', views: '2.1K views' },
@@ -17,7 +23,41 @@ function normalizeArrayResponse(data) {
   if (Array.isArray(data?.data)) return data.data;
   if (Array.isArray(data?.categories)) return data.categories;
   if (Array.isArray(data?.videos)) return data.videos;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.saved_videos)) return data.saved_videos;
+  if (Array.isArray(data?.history)) return data.history;
   return [];
+}
+
+function unwrapVideoItem(item) {
+  const video = item?.video || item?.saved_video || item?.history_video || item?.item || item || {};
+
+  return {
+    ...item,
+    ...video,
+    id: video?.id || item?.video_id || item?.id,
+    slug: video?.slug || item?.video_slug || item?.slug,
+    title: video?.title || item?.title,
+    description: video?.description || item?.description,
+    thumbnail_url: video?.thumbnail_url || item?.thumbnail_url,
+    thumbnail_key: video?.thumbnail_key || item?.thumbnail_key,
+    video_url: video?.video_url || item?.video_url,
+    buy_now_url: video?.buy_now_url || item?.buy_now_url,
+    published_at: video?.published_at || item?.published_at,
+    created_at: video?.created_at || item?.created_at,
+    channel_id: video?.channel_id || item?.channel_id,
+    channel_name: video?.channel_name || item?.channel_name,
+    creator_name: video?.creator_name || item?.creator_name,
+    category_name: video?.category_name || item?.category_name,
+    views:
+      video?.views ??
+      video?.view_count ??
+      video?.total_views ??
+      item?.views ??
+      item?.view_count ??
+      item?.total_views ??
+      0,
+  };
 }
 
 function formatVideoMeta(video) {
@@ -52,9 +92,15 @@ function HomePage() {
   const [categoryTreeCount, setCategoryTreeCount] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [featuredVideos, setFeaturedVideos] = useState([]);
+  const [savedVideos, setSavedVideos] = useState([]);
+  const [watchHistory, setWatchHistory] = useState([]);
+  const [subscriptionVideos, setSubscriptionVideos] = useState([]);
+  const [activeMenu, setActiveMenu] = useState('Home');
   const [loading, setLoading] = useState(true);
+  const [sectionLoading, setSectionLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [theme, setTheme] = useState('light');
+  const [me, setMe] = useState(null);
 
   useEffect(() => {
     async function loadHomepageData() {
@@ -65,12 +111,12 @@ function HomePage() {
         const [categoriesResponse, treeResponse, videosResponse] = await Promise.all([
           getCategories(),
           getCategoryTree(),
-          getPublicVideos({ limit: 12 }),
+          getPublicVideos({ limit: 24 }),
         ]);
 
         const categoriesList = normalizeArrayResponse(categoriesResponse);
         const treeList = normalizeArrayResponse(treeResponse);
-        const publicVideosList = normalizeArrayResponse(videosResponse);
+        const publicVideosList = normalizeArrayResponse(videosResponse).map(unwrapVideoItem);
 
         setCategories(categoriesList);
         setCategoryTreeCount(treeList.length);
@@ -82,8 +128,92 @@ function HomePage() {
       }
     }
 
+    async function loadMe() {
+      try {
+        const meResponse = await apiRequest('/auth/me', {
+          method: 'GET',
+        });
+
+        setMe(meResponse?.user || meResponse?.data || meResponse || null);
+      } catch (error) {
+        setMe(null);
+      }
+    }
+
     loadHomepageData();
+    loadMe();
   }, []);
+
+  useEffect(() => {
+    async function loadMenuData() {
+      if (activeMenu === 'Home' || activeMenu === 'Trending' || activeMenu === 'Categories') {
+        return;
+      }
+
+      if (!me) {
+        return;
+      }
+
+      setSectionLoading(true);
+      setErrorMessage('');
+
+      try {
+        if (activeMenu === 'Saved') {
+          const data = await getSavedVideos();
+          setSavedVideos(normalizeArrayResponse(data).map(unwrapVideoItem));
+        }
+
+        if (activeMenu === 'History') {
+          const data = await getWatchHistoryVideos();
+          setWatchHistory(normalizeArrayResponse(data).map(unwrapVideoItem));
+        }
+
+        if (activeMenu === 'Subscriptions') {
+          const uniqueChannelVideos = [];
+          const seen = new Set();
+
+          featuredVideos.forEach((video) => {
+            const channelId = video?.channel_id || video?.creator_channel_id || video?.creator_id;
+            if (channelId && !seen.has(channelId)) {
+              seen.add(channelId);
+              uniqueChannelVideos.push(video);
+            }
+          });
+
+          const checks = await Promise.all(
+            uniqueChannelVideos.map(async (video) => {
+              const channelId = video?.channel_id || video?.creator_channel_id || video?.creator_id;
+              if (!channelId) return null;
+
+              try {
+                const summary = await apiRequest(`/channels/${channelId}/subscription`, {
+                  method: 'GET',
+                });
+
+                const isSubscribed =
+                  summary?.is_subscribed ||
+                  summary?.subscribed ||
+                  summary?.subscription_status === 'subscribed' ||
+                  summary?.data?.is_subscribed;
+
+                return isSubscribed ? video : null;
+              } catch (error) {
+                return null;
+              }
+            })
+          );
+
+          setSubscriptionVideos(checks.filter(Boolean));
+        }
+      } catch (error) {
+        setErrorMessage(error.message || 'Failed to load section');
+      } finally {
+        setSectionLoading(false);
+      }
+    }
+
+    loadMenuData();
+  }, [activeMenu, me, featuredVideos]);
 
   const categoryPills = useMemo(() => {
     const names = categories.map((item) => {
@@ -98,7 +228,15 @@ function HomePage() {
     return ['All', ...names.filter(Boolean)];
   }, [categories]);
 
-  const filteredVideos = useMemo(() => {
+  const trendingVideos = useMemo(() => {
+    return [...featuredVideos].sort((a, b) => {
+      const aViews = Number(a?.views || a?.view_count || a?.total_views || 0);
+      const bViews = Number(b?.views || b?.view_count || b?.total_views || 0);
+      return bViews - aViews;
+    });
+  }, [featuredVideos]);
+
+  const categoriesVideos = useMemo(() => {
     if (selectedCategory === 'All') {
       return featuredVideos;
     }
@@ -113,6 +251,51 @@ function HomePage() {
       return String(categoryName).toLowerCase() === String(selectedCategory).toLowerCase();
     });
   }, [featuredVideos, selectedCategory]);
+
+  const currentVideos = useMemo(() => {
+    if (activeMenu === 'Trending') return trendingVideos;
+    if (activeMenu === 'Categories') return categoriesVideos;
+    if (activeMenu === 'Saved') return savedVideos;
+    if (activeMenu === 'History') return watchHistory;
+    if (activeMenu === 'Subscriptions') return subscriptionVideos;
+    return categoriesVideos;
+  }, [
+    activeMenu,
+    trendingVideos,
+    categoriesVideos,
+    savedVideos,
+    watchHistory,
+    subscriptionVideos,
+  ]);
+
+  const sectionTitle = useMemo(() => {
+    if (activeMenu === 'Trending') return 'Trending Videos';
+    if (activeMenu === 'Categories') return 'Category Videos';
+    if (activeMenu === 'Saved') return 'Saved Videos';
+    if (activeMenu === 'History') return 'Watch History';
+    if (activeMenu === 'Subscriptions') return 'Subscriptions';
+    return 'Featured Videos';
+  }, [activeMenu]);
+
+  const sectionText = useMemo(() => {
+    if (activeMenu === 'Trending') return 'Videos ranked from the public feed.';
+    if (activeMenu === 'Categories') return 'Browse videos by category.';
+    if (activeMenu === 'Saved') return 'Videos you saved.';
+    if (activeMenu === 'History') return 'Videos you watched before.';
+    if (activeMenu === 'Subscriptions') return 'Latest videos from subscribed channels.';
+    return currentVideos.length
+      ? 'Live videos from the real public feed.'
+      : 'No published public videos available yet.';
+  }, [activeMenu, currentVideos.length]);
+
+  const menuItems = ['Home', 'Trending', 'Categories', 'Saved', 'History', 'Subscriptions'];
+
+  const userDisplayName =
+    me?.full_name ||
+    me?.username ||
+    me?.name ||
+    me?.email ||
+    'My Account';
 
   return (
     <div className={`home-layout ${theme === 'dark' ? 'home-layout-dark' : 'home-layout-light'}`}>
@@ -142,19 +325,33 @@ function HomePage() {
           >
             {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
           </button>
-          <a href="/login" className="vg-link-btn">Login</a>
-          <a href="/register" className="vg-link-btn vg-link-btn-dark">Register</a>
+
+          {me ? (
+            <>
+              <span className="vg-user-pill">{userDisplayName}</span>
+              <a href="/creator-dashboard" className="vg-link-btn vg-link-btn-dark">Account</a>
+            </>
+          ) : (
+            <>
+              <a href="/login" className="vg-link-btn">Login</a>
+              <a href="/register" className="vg-link-btn vg-link-btn-dark">Register</a>
+            </>
+          )}
         </div>
       </header>
 
       <div className="vg-main-shell">
         <aside className="vg-sidebar">
-          <div className="vg-sidebar-item active">Home</div>
-          <div className="vg-sidebar-item">Trending</div>
-          <div className="vg-sidebar-item">Categories</div>
-          <div className="vg-sidebar-item">Saved</div>
-          <div className="vg-sidebar-item">History</div>
-          <div className="vg-sidebar-item">Subscriptions</div>
+          {menuItems.map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={`vg-sidebar-item ${activeMenu === item ? 'active' : ''}`}
+              onClick={() => setActiveMenu(item)}
+            >
+              {item}
+            </button>
+          ))}
         </aside>
 
         <main className="vg-content">
@@ -176,8 +373,17 @@ function HomePage() {
               </p>
 
               <div className="vg-hero-actions">
-                <a href="/login" className="vg-primary-btn">Creator Login</a>
-                <a href="/register" className="vg-secondary-btn">Join VideoGad</a>
+                {me ? (
+                  <a href="/creator-dashboard" className="vg-primary-btn">Go to Dashboard</a>
+                ) : (
+                  <a href="/login" className="vg-primary-btn">Creator Login</a>
+                )}
+
+                {me ? (
+                  <a href="/upload-video" className="vg-secondary-btn">Upload Video</a>
+                ) : (
+                  <a href="/register" className="vg-secondary-btn">Join VideoGad</a>
+                )}
               </div>
             </div>
 
@@ -211,7 +417,10 @@ function HomePage() {
                 key={name}
                 type="button"
                 className={`vg-category-pill ${selectedCategory === name ? 'active' : ''}`}
-                onClick={() => setSelectedCategory(name)}
+                onClick={() => {
+                  setSelectedCategory(name);
+                  setActiveMenu('Categories');
+                }}
               >
                 {name}
               </button>
@@ -220,60 +429,61 @@ function HomePage() {
 
           <section className="vg-home-section-head">
             <div>
-              <h2>Featured Videos</h2>
-              <p>
-                {filteredVideos.length
-                  ? 'Live videos from the real public feed.'
-                  : 'No published public videos available yet.'}
-              </p>
+              <h2>{sectionTitle}</h2>
+              <p>{sectionLoading ? 'Loading...' : sectionText}</p>
             </div>
           </section>
 
           <section className="vg-video-grid">
-            {filteredVideos.length ? (
-              filteredVideos.map((video) => {
+            {currentVideos.length ? (
+              currentVideos.map((video, index) => {
                 const details = formatVideoMeta(video);
+                const cardKey = video?.id || video?.video_id || video?.slug || `video-${index}`;
+                const watchUrl = video?.slug ? `/watch/${video.slug}` : '/watch';
+                const thumbnailUrl = video?.thumbnail_url || '';
 
                 return (
-                  <div className="vg-video-card" key={video.id}>
-                    <div className="vg-video-thumb">
-                      {video.thumbnail_key ? 'Video Thumbnail' : 'Featured Video'}
+                  <a className="vg-video-card vg-video-card-link" key={cardKey} href={watchUrl}>
+                    <div
+                      className={`vg-video-thumb ${thumbnailUrl ? 'has-image' : ''}`}
+                      style={thumbnailUrl ? { backgroundImage: `url(${thumbnailUrl})` } : undefined}
+                    >
+                      {!thumbnailUrl ? (video?.thumbnail_key ? 'Video Thumbnail' : 'Featured Video') : null}
                     </div>
 
                     <div className="vg-video-info">
-                      <h3>{video.title || 'Untitled Video'}</h3>
+                      <h3>{video?.title || 'Untitled Video'}</h3>
                       <div className="vg-creator-name">{details.creator}</div>
                       <div className="vg-meta-text">{details.meta}</div>
 
                       <div className="vg-card-actions">
-                        <a
-                          href={video.slug ? `/watch/${video.slug}` : '#'}
-                          className="vg-card-btn"
-                        >
-                          Watch
-                        </a>
+                        <span className="vg-card-btn">Watch</span>
 
-                        {video.buy_now_url ? (
-                          <a
-                            href={video.buy_now_url}
+                        {video?.buy_now_url ? (
+                          <span
                             className="vg-card-btn vg-card-btn-light"
-                            target="_blank"
-                            rel="noreferrer"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              window.open(video.buy_now_url, '_blank', 'noopener,noreferrer');
+                            }}
                           >
                             Buy Now
-                          </a>
+                          </span>
                         ) : (
-                          <button type="button" className="vg-card-btn vg-card-btn-light">
-                            Buy Now
-                          </button>
+                          <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
                         )}
                       </div>
                     </div>
-                  </div>
+                  </a>
                 );
               })
             ) : (
-              <div className="home-state-message">No featured videos yet.</div>
+              <div className="home-state-message">
+                {me
+                  ? 'No videos found for this section yet.'
+                  : 'Login to use saved videos, history, and subscriptions.'}
+              </div>
             )}
           </section>
 

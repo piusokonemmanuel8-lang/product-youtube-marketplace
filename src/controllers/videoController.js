@@ -6,6 +6,56 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const pool = require('../config/db');
 const s3 = require('../config/s3');
 
+const S3_BUCKET_NAME =
+  process.env.AWS_S3_BUCKET ||
+  process.env.AWS_S3_BUCKET_NAME ||
+  process.env.AWS_BUCKET_NAME ||
+  process.env.AWS_BUCKET ||
+  '';
+
+const S3_REGION =
+  process.env.AWS_REGION ||
+  process.env.AWS_S3_REGION ||
+  'us-east-1';
+
+const CLOUDFRONT_URL =
+  process.env.AWS_CLOUDFRONT_URL ||
+  process.env.CLOUDFRONT_URL ||
+  '';
+
+function buildMediaUrl(key) {
+  if (!key) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(key)) {
+    return key;
+  }
+
+  const cleanKey = String(key).replace(/^\/+/, '');
+
+  if (CLOUDFRONT_URL) {
+    return `${CLOUDFRONT_URL.replace(/\/$/, '')}/${cleanKey}`;
+  }
+
+  if (S3_BUCKET_NAME) {
+    return `https://${S3_BUCKET_NAME}.s3.${S3_REGION}.amazonaws.com/${cleanKey}`;
+  }
+
+  return cleanKey;
+}
+
+function normalizeVideoRow(video) {
+  if (!video) return video;
+
+  return {
+    ...video,
+    video_url: buildMediaUrl(video.video_key),
+    thumbnail_url: buildMediaUrl(video.thumbnail_key),
+    preview_url: buildMediaUrl(video.preview_key),
+  };
+}
+
 function normalizeBuyNowUrl(url) {
   if (url === undefined || url === null) {
     return undefined;
@@ -200,13 +250,14 @@ async function createModerationQueueItem({
   if (existingRows.length) {
     await pool.query(
       `UPDATE moderation_queue
-       SET status = 'pending',
-           reviewer_note = NULL,
-           reviewed_at = NULL,
+       SET entity_type = 'video',
+           entity_id = ?,
+           moderation_status = 'pending',
+           reason = ?,
            reviewed_by = NULL,
-           reason = ?
+           reviewed_at = NULL
        WHERE id = ?`,
-      [reason, existingRows[0].id]
+      [submittedBy, reason, existingRows[0].id]
     );
 
     return existingRows[0].id;
@@ -214,8 +265,8 @@ async function createModerationQueueItem({
 
   const [result] = await pool.query(
     `INSERT INTO moderation_queue
-     (video_id, submitted_by, status, reason)
-     VALUES (?, ?, 'pending', ?)`,
+     (video_id, entity_type, entity_id, moderation_status, reason, reviewed_by, reviewed_at)
+     VALUES (?, 'video', ?, 'pending', ?, NULL, NULL)`,
     [videoId, submittedBy, reason]
   );
 
@@ -237,7 +288,7 @@ async function createVideoUploadUrl(req, res) {
 
     if (!creatorProfile) {
       return res.status(403).json({
-        message: 'Only creators can upload videos',
+        message: 'Only creators can upload files',
       });
     }
 
@@ -256,9 +307,7 @@ async function createVideoUploadUrl(req, res) {
 
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 900 });
 
-    const fileUrl = process.env.AWS_CLOUDFRONT_URL
-      ? `${process.env.AWS_CLOUDFRONT_URL.replace(/\/$/, '')}/${objectKey}`
-      : `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${objectKey}`;
+    const fileUrl = buildMediaUrl(objectKey);
 
     return res.status(200).json({
       message: 'Upload URL created successfully',
@@ -302,6 +351,12 @@ async function createVideo(req, res) {
     if (!channel_id || !title || !slug) {
       return res.status(400).json({
         message: 'channel_id, title and slug are required',
+      });
+    }
+
+    if (!thumbnail_key) {
+      return res.status(400).json({
+        message: 'Thumbnail is required',
       });
     }
 
@@ -444,7 +499,7 @@ async function createVideo(req, res) {
 
     return res.status(201).json({
       message: 'Video created successfully and sent for moderation',
-      video: videos[0],
+      video: normalizeVideoRow(videos[0]),
     });
   } catch (error) {
     return res.status(500).json({
@@ -467,12 +522,20 @@ async function getMyVideos(req, res) {
     }
 
     const [videos] = await pool.query(
-      'SELECT * FROM videos WHERE creator_id = ? ORDER BY id DESC',
+      `SELECT
+        v.*,
+        c.channel_name,
+        c.channel_handle,
+        c.channel_slug
+       FROM videos v
+       LEFT JOIN channels c ON v.channel_id = c.id
+       WHERE v.creator_id = ?
+       ORDER BY v.id DESC`,
       [creatorProfile.id]
     );
 
     return res.status(200).json({
-      videos,
+      videos: videos.map(normalizeVideoRow),
     });
   } catch (error) {
     return res.status(500).json({
@@ -505,7 +568,7 @@ async function getPublicVideos(req, res) {
     );
 
     return res.status(200).json({
-      videos,
+      videos: videos.map(normalizeVideoRow),
     });
   } catch (error) {
     return res.status(500).json({
@@ -555,7 +618,7 @@ async function getAdminVideos(req, res) {
     const [videos] = await pool.query(sql, params);
 
     return res.status(200).json({
-      videos,
+      videos: videos.map(normalizeVideoRow),
     });
   } catch (error) {
     return res.status(500).json({
@@ -589,7 +652,7 @@ async function getAdminVideoById(req, res) {
     }
 
     return res.status(200).json({
-      video: videos[0],
+      video: normalizeVideoRow(videos[0]),
     });
   } catch (error) {
     return res.status(500).json({
@@ -645,12 +708,12 @@ async function updateAdminVideoStatus(req, res) {
     if (finalModerationStatus === 'approved' || finalModerationStatus === 'rejected') {
       await pool.query(
         `UPDATE moderation_queue
-         SET status = ?,
-             reviewer_note = ?,
+         SET moderation_status = ?,
+             reason = ?,
              reviewed_at = NOW(),
              reviewed_by = ?
          WHERE video_id = ?
-           AND status = 'pending'`,
+           AND moderation_status = 'pending'`,
         [
           finalModerationStatus,
           reviewer_note || null,
@@ -667,7 +730,7 @@ async function updateAdminVideoStatus(req, res) {
 
     return res.status(200).json({
       message: 'Admin video status updated successfully',
-      video: updatedVideos[0],
+      video: normalizeVideoRow(updatedVideos[0]),
     });
   } catch (error) {
     return res.status(500).json({
@@ -682,7 +745,15 @@ async function getVideoBySlug(req, res) {
     const { slug } = req.params;
 
     const [videos] = await pool.query(
-      'SELECT * FROM videos WHERE slug = ? LIMIT 1',
+      `SELECT
+        v.*,
+        c.channel_name,
+        c.channel_handle,
+        c.channel_slug
+       FROM videos v
+       LEFT JOIN channels c ON v.channel_id = c.id
+       WHERE v.slug = ?
+       LIMIT 1`,
       [slug]
     );
 
@@ -693,7 +764,7 @@ async function getVideoBySlug(req, res) {
     }
 
     return res.status(200).json({
-      video: videos[0],
+      video: normalizeVideoRow(videos[0]),
     });
   } catch (error) {
     return res.status(500).json({
@@ -890,7 +961,7 @@ async function updateMyVideo(req, res) {
 
     return res.status(200).json({
       message: 'Video updated successfully',
-      video: updatedVideos[0],
+      video: normalizeVideoRow(updatedVideos[0]),
     });
   } catch (error) {
     return res.status(500).json({

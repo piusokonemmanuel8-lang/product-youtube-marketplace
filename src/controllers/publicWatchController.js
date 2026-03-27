@@ -1,5 +1,42 @@
 const pool = require('../config/db');
 
+const S3_BUCKET_NAME =
+  process.env.AWS_S3_BUCKET ||
+  process.env.AWS_S3_BUCKET_NAME ||
+  process.env.AWS_BUCKET_NAME ||
+  process.env.AWS_BUCKET ||
+  '';
+
+const S3_REGION =
+  process.env.AWS_REGION ||
+  process.env.AWS_S3_REGION ||
+  'us-east-1';
+
+const CLOUDFRONT_URL =
+  process.env.AWS_CLOUDFRONT_URL ||
+  process.env.CLOUDFRONT_URL ||
+  '';
+
+function buildFileUrl(key) {
+  if (!key) return null;
+
+  if (/^https?:\/\//i.test(key)) {
+    return key;
+  }
+
+  const cleanKey = key.replace(/^\//, '');
+
+  if (CLOUDFRONT_URL) {
+    return `${CLOUDFRONT_URL.replace(/\/$/, '')}/${cleanKey}`;
+  }
+
+  if (S3_BUCKET_NAME) {
+    return `https://${S3_BUCKET_NAME}.s3.${S3_REGION}.amazonaws.com/${cleanKey}`;
+  }
+
+  return cleanKey;
+}
+
 async function getPublicWatchPage(req, res) {
   try {
     const { slug } = req.params;
@@ -117,14 +154,17 @@ async function getPublicWatchPage(req, res) {
         is_monetized: video.is_monetized,
         published_at: video.published_at,
         created_at: video.created_at,
+        video_url: buildFileUrl(video.video_key),
+        thumbnail_url: buildFileUrl(video.thumbnail_key),
+        preview_url: buildFileUrl(video.preview_key),
       },
       channel: {
         id: video.channel_db_id,
         channel_name: video.channel_name,
         channel_handle: video.channel_handle,
         channel_slug: video.channel_slug,
-        avatar_url: video.avatar_url,
-        banner_url: video.banner_url,
+        avatar_url: buildFileUrl(video.avatar_url),
+        banner_url: buildFileUrl(video.banner_url),
         bio: video.bio,
         subscriber_count: video.subscriber_count,
         total_views: video.total_views,
@@ -133,11 +173,11 @@ async function getPublicWatchPage(req, res) {
         creator_public_name: video.creator_public_name,
       },
       metrics: {
-        total_views: Number(viewRows[0].total_views || 0),
-        likes_count: Number(reactionRows[0].likes_count || 0),
-        dislikes_count: Number(reactionRows[0].dislikes_count || 0),
-        total_comments: Number(commentCountRows[0].total_comments || 0),
-        total_shares: Number(shareRows[0].total_shares || 0),
+        total_views: Number(viewRows[0]?.total_views || 0),
+        likes_count: Number(reactionRows[0]?.likes_count || 0),
+        dislikes_count: Number(reactionRows[0]?.dislikes_count || 0),
+        total_comments: Number(commentCountRows[0]?.total_comments || 0),
+        total_shares: Number(shareRows[0]?.total_shares || 0),
       },
       tags: videoTags,
       channel_links: channelLinks,
@@ -165,7 +205,7 @@ async function recordPublicVideoView(req, res) {
       completed_percent,
       source_page,
       referrer_url,
-    } = req.body;
+    } = req.body || {};
 
     const [videos] = await pool.query(
       'SELECT id FROM videos WHERE id = ? LIMIT 1',
@@ -214,8 +254,17 @@ async function recordPublicVideoView(req, res) {
       [result.insertId]
     );
 
+    const [countRows] = await pool.query(
+      `SELECT COUNT(*) AS total_views
+       FROM video_views
+       WHERE video_id = ?`,
+      [videoId]
+    );
+
     return res.status(201).json({
       message: 'Video view recorded successfully',
+      total_views: Number(countRows[0]?.total_views || 0),
+      views_count: Number(countRows[0]?.total_views || 0),
       view: rows[0],
     });
   } catch (error) {
@@ -269,8 +318,13 @@ async function getRelatedVideos(req, res) {
       [videoId, currentVideo.channel_id, currentVideo.category_id]
     );
 
+    const relatedWithUrls = relatedRows.map((item) => ({
+      ...item,
+      thumbnail_url: buildFileUrl(item.thumbnail_key),
+    }));
+
     return res.status(200).json({
-      related_videos: relatedRows,
+      related_videos: relatedWithUrls,
     });
   } catch (error) {
     return res.status(500).json({

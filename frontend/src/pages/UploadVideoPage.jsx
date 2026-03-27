@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import './UploadVideoPage.css';
 import { getMyChannel } from '../services/createChannelService';
 import {
   attachTagsToVideo,
@@ -82,6 +83,7 @@ function UploadVideoPage() {
     selectedTags: [],
     send_to_moderation: true,
     video_file: null,
+    thumbnail_file: null,
   });
 
   useEffect(() => {
@@ -158,6 +160,7 @@ function UploadVideoPage() {
             selectedTags: [],
             send_to_moderation: false,
             video_file: null,
+            thumbnail_file: null,
           });
         } else if (categoriesData.length) {
           setFormData((prev) => ({
@@ -281,6 +284,36 @@ function UploadVideoPage() {
     return data;
   }
 
+  async function uploadAsset(file, folder, progressStart = 0, progressEnd = 100) {
+    const uploadUrlResponse = await requestVideoUploadUrl({
+      fileName: file.name,
+      contentType: file.type || 'application/octet-stream',
+      folder,
+    });
+
+    const uploadUrl =
+      uploadUrlResponse?.uploadUrl ||
+      uploadUrlResponse?.data?.uploadUrl ||
+      uploadUrlResponse?.signedUrl;
+
+    const key =
+      uploadUrlResponse?.key ||
+      uploadUrlResponse?.data?.key ||
+      uploadUrlResponse?.fileKey;
+
+    if (!uploadUrl || !key) {
+      throw new Error('Upload URL response is incomplete');
+    }
+
+    await uploadFileToSignedUrl(uploadUrl, file, (percent) => {
+      const scaled =
+        progressStart + ((progressEnd - progressStart) * Number(percent || 0)) / 100;
+      setUploadPercent(Math.round(scaled));
+    });
+
+    return key;
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
     setSubmitting(true);
@@ -295,46 +328,29 @@ function UploadVideoPage() {
         throw new Error('No creator channel found. Create your channel first.');
       }
 
-      let videoKey = editingVideo?.video_key || '';
-
       if (!isEditMode && !formData.video_file) {
         throw new Error('Please choose a video file');
       }
 
+      if (!formData.thumbnail_file && !editingVideo?.thumbnail_key) {
+        throw new Error('Please choose a thumbnail image');
+      }
+
+      let videoKey = editingVideo?.video_key || '';
+      let thumbnailKey = editingVideo?.thumbnail_key || '';
+
       if (formData.video_file) {
-        setUploadStage('Requesting upload URL...');
-
-        const uploadUrlResponse = await requestVideoUploadUrl({
-          fileName: formData.video_file.name,
-          contentType: formData.video_file.type || 'video/mp4',
-          folder: 'videos',
-        });
-
-        const uploadUrl =
-          uploadUrlResponse?.uploadUrl ||
-          uploadUrlResponse?.data?.uploadUrl ||
-          uploadUrlResponse?.signedUrl;
-
-        videoKey =
-          uploadUrlResponse?.key ||
-          uploadUrlResponse?.data?.key ||
-          uploadUrlResponse?.fileKey;
-
-        if (!uploadUrl || !videoKey) {
-          throw new Error('Upload URL response is incomplete');
-        }
-
         setUploadStage('Uploading video file...');
-        setUploadPercent(0);
+        videoKey = await uploadAsset(formData.video_file, 'videos', 0, 70);
+      }
 
-        await uploadFileToSignedUrl(uploadUrl, formData.video_file, (percent) => {
-          setUploadPercent(percent);
-        });
-
-        setUploadPercent(100);
+      if (formData.thumbnail_file) {
+        setUploadStage('Uploading thumbnail...');
+        thumbnailKey = await uploadAsset(formData.thumbnail_file, 'thumbnails', 70, 92);
       }
 
       setUploadStage(isEditMode ? 'Saving video changes...' : 'Saving video metadata...');
+      setUploadPercent((prev) => Math.max(prev, 93));
 
       const buyNowUrl = formData.buy_link.trim();
       const externalLink = isExternalUrl(buyNowUrl);
@@ -355,6 +371,10 @@ function UploadVideoPage() {
 
       if (videoKey) {
         videoPayload.video_key = videoKey;
+      }
+
+      if (thumbnailKey) {
+        videoPayload.thumbnail_key = thumbnailKey;
       }
 
       let videoId = '';
@@ -416,6 +436,7 @@ function UploadVideoPage() {
           selectedTags: [],
           send_to_moderation: true,
           video_file: null,
+          thumbnail_file: null,
         });
       }
 
@@ -437,7 +458,7 @@ function UploadVideoPage() {
         await loadExternalPlanData();
       } else {
         setErrorMessage(backendMessage);
-        setUploadStage(uploadStage || (isEditMode ? 'Update failed' : 'Upload failed'));
+        setUploadStage(isEditMode ? 'Update failed' : 'Upload failed');
       }
     } finally {
       setSubmitting(false);
@@ -486,7 +507,7 @@ function UploadVideoPage() {
           <span>
             {isEditMode
               ? 'Update your submitted video details here.'
-              : 'Upload a video file manually, attach category and tags, and optionally send it to moderation.'}
+              : 'Upload a video file manually, attach category, thumbnail and tags, and optionally send it to moderation.'}
           </span>
         </div>
 
@@ -599,25 +620,48 @@ function UploadVideoPage() {
             </div>
           </div>
 
-          <div className="form-group">
-            <label>{isEditMode ? 'Replace Video File (Optional)' : 'Video File Upload'}</label>
-            <input
-              type="file"
-              name="video_file"
-              accept="video/*"
-              onChange={handleChange}
-            />
-            {formData.video_file ? (
-              <div className="upload-file-meta">
-                <strong>{formData.video_file.name}</strong>
-                <span>{uploadStage || 'Ready to upload'}</span>
-                <span>{uploadPercent}%</span>
-              </div>
-            ) : isEditMode ? (
-              <div className="upload-file-meta">
-                <strong>Keeping current uploaded video file</strong>
-              </div>
-            ) : null}
+          <div className="form-grid">
+            <div className="form-group">
+              <label>{isEditMode ? 'Replace Video File (Optional)' : 'Video File Upload'}</label>
+              <input
+                type="file"
+                name="video_file"
+                accept="video/*"
+                onChange={handleChange}
+              />
+              {formData.video_file ? (
+                <div className="upload-file-meta">
+                  <strong>{formData.video_file.name}</strong>
+                  <span>{uploadStage || 'Ready to upload'}</span>
+                  <span>{uploadPercent}%</span>
+                </div>
+              ) : isEditMode ? (
+                <div className="upload-file-meta">
+                  <strong>Keeping current uploaded video file</strong>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="form-group">
+              <label>{isEditMode ? 'Replace Thumbnail (Optional)' : 'Thumbnail Upload'}</label>
+              <input
+                type="file"
+                name="thumbnail_file"
+                accept="image/*"
+                onChange={handleChange}
+                required={!isEditMode}
+              />
+              {formData.thumbnail_file ? (
+                <div className="upload-file-meta">
+                  <strong>{formData.thumbnail_file.name}</strong>
+                  <span>Thumbnail ready</span>
+                </div>
+              ) : isEditMode && editingVideo?.thumbnail_key ? (
+                <div className="upload-file-meta">
+                  <strong>Keeping current thumbnail</strong>
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <div className="form-group">

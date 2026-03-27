@@ -1,21 +1,25 @@
-import api from './api';
+import { apiRequest } from './api';
 
 export async function getChannelBySlug(slug) {
-  const response = await api.get(`/channels/${slug}`);
-  return response.data;
+  return apiRequest(`/api/channels/${slug}`, {
+    method: 'GET',
+  });
 }
 
 export async function getChannelSubscription(channelId) {
-  const response = await api.get(`/channels/${channelId}/subscription`);
-  return response.data;
+  return apiRequest(`/api/channels/${channelId}/subscription`, {
+    method: 'GET',
+  });
 }
 
 export async function subscribeToChannel(channelId) {
-  const response = await api.post(`/channels/${channelId}/subscribe`);
-  return response.data;
+  return apiRequest(`/api/channels/${channelId}/subscribe`, {
+    method: 'POST',
+  });
 }
 
 export async function unsubscribeFromChannel(channelId) {
-  const response = await api.delete(`/channels/${channelId}/subscribe`);
-  return response.data;
+  return apiRequest(`/api/channels/${channelId}/subscribe`, {
+    method: 'DELETE',
+  });
 }

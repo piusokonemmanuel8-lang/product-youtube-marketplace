@@ -106,8 +106,16 @@ function App() {
     return <RegisterPage />;
   }
 
+  if (path.startsWith('/watch/')) {
+    return <WatchPage />;
+  }
+
   if (path === '/watch') {
     return <WatchPage />;
+  }
+
+  if (path.startsWith('/channel/')) {
+    return <ChannelPage />;
   }
 
   if (path === '/channel') {

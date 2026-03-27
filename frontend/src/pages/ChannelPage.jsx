@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import './ChannelPage.css';
 import {
   getChannelBySlug,
   getChannelSubscription,
@@ -6,15 +7,24 @@ import {
   unsubscribeFromChannel,
 } from '../services/channelService';
 
-function getQueryParam(name) {
+function getSlugFromUrl() {
+  const path = window.location.pathname || '';
+  const segments = path.split('/').filter(Boolean);
+  const channelIndex = segments.indexOf('channel');
+
+  if (channelIndex !== -1 && segments[channelIndex + 1]) {
+    return decodeURIComponent(segments[channelIndex + 1]);
+  }
+
   const params = new URLSearchParams(window.location.search);
-  return params.get(name);
+  return params.get('slug') || 'demo-channel';
 }
 
 function getDemoChannel(slug) {
   return {
     id: 777,
     slug,
+    channel_slug: slug,
     name: 'VideoGad Demo Channel',
     channel_name: 'VideoGad Demo Channel',
     description:
@@ -28,40 +38,16 @@ function getDemoChannel(slug) {
 }
 
 const demoChannelVideos = [
-  {
-    id: 1,
-    title: 'Demo Channel Video One',
-    meta: '12K views • demo content',
-  },
-  {
-    id: 2,
-    title: 'Demo Channel Video Two',
-    meta: '8.4K views • demo content',
-  },
-  {
-    id: 3,
-    title: 'Demo Channel Video Three',
-    meta: '5.1K views • demo content',
-  },
-  {
-    id: 4,
-    title: 'Demo Channel Video Four',
-    meta: '3.7K views • demo content',
-  },
-  {
-    id: 5,
-    title: 'Demo Channel Video Five',
-    meta: '9.9K views • demo content',
-  },
-  {
-    id: 6,
-    title: 'Demo Channel Video Six',
-    meta: '2.8K views • demo content',
-  },
+  { id: 1, title: 'Demo Channel Video One', meta: '12K views • demo content' },
+  { id: 2, title: 'Demo Channel Video Two', meta: '8.4K views • demo content' },
+  { id: 3, title: 'Demo Channel Video Three', meta: '5.1K views • demo content' },
+  { id: 4, title: 'Demo Channel Video Four', meta: '3.7K views • demo content' },
+  { id: 5, title: 'Demo Channel Video Five', meta: '9.9K views • demo content' },
+  { id: 6, title: 'Demo Channel Video Six', meta: '2.8K views • demo content' },
 ];
 
 function ChannelPage() {
-  const slug = getQueryParam('slug') || 'demo-channel';
+  const [slug, setSlug] = useState(getSlugFromUrl());
   const [channelData, setChannelData] = useState(null);
   const [subscriptionData, setSubscriptionData] = useState(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -70,6 +56,31 @@ function ChannelPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
+
+  useEffect(() => {
+    const syncSlug = () => setSlug(getSlugFromUrl());
+
+    const originalPushState = window.history.pushState;
+    const originalReplaceState = window.history.replaceState;
+
+    window.history.pushState = function (...args) {
+      originalPushState.apply(window.history, args);
+      syncSlug();
+    };
+
+    window.history.replaceState = function (...args) {
+      originalReplaceState.apply(window.history, args);
+      syncSlug();
+    };
+
+    window.addEventListener('popstate', syncSlug);
+
+    return () => {
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
+      window.removeEventListener('popstate', syncSlug);
+    };
+  }, []);
 
   useEffect(() => {
     async function loadChannelPage() {
@@ -81,10 +92,10 @@ function ChannelPage() {
         const channelResponse = await getChannelBySlug(slug);
         setChannelData(channelResponse);
 
-        const channelId =
-          channelResponse?.id ||
-          channelResponse?.channel?.id ||
-          channelResponse?.data?.id;
+        const resolvedChannel =
+          channelResponse?.channel || channelResponse?.data || channelResponse || {};
+
+        const channelId = resolvedChannel?.id;
 
         if (!channelId) {
           throw new Error('Channel id not found');
@@ -97,7 +108,8 @@ function ChannelPage() {
           const subscribed =
             subscriptionResponse?.subscribed === true ||
             subscriptionResponse?.is_subscribed === true ||
-            subscriptionResponse?.status === 'subscribed';
+            subscriptionResponse?.status === 'subscribed' ||
+            subscriptionResponse?.subscription_status === 'subscribed';
 
           setIsSubscribed(subscribed);
         } catch (error) {
@@ -163,9 +175,7 @@ function ChannelPage() {
       try {
         const updated = await getChannelSubscription(channelId);
         setSubscriptionData(updated);
-      } catch (error) {
-        // ignore refresh error
-      }
+      } catch (error) {}
     } catch (error) {
       setErrorMessage(error.message || 'Failed to update subscription');
     } finally {
@@ -209,9 +219,11 @@ function ChannelPage() {
 
               <div className="channel-profile-main">
                 <h1>{channel?.name || channel?.channel_name || 'Channel Name'}</h1>
-                <p className="channel-handle">@{channel?.slug || slug}</p>
+                <p className="channel-handle">
+                  @{channel?.channel_slug || channel?.slug || slug}
+                </p>
                 <p className="channel-meta-line">
-                  {channel?.subscribers_count || 0} subscribers • {channel?.total_videos || 0} videos • {channel?.total_views || 0} total views
+                  {channel?.subscriber_count || channel?.subscribers_count || 0} subscribers • {channel?.total_videos || 0} videos • {channel?.total_views || 0} total views
                 </p>
               </div>
 
@@ -234,9 +246,7 @@ function ChannelPage() {
             <h2>About Channel</h2>
           </div>
 
-          <p>
-            {channel?.description || 'No channel description yet.'}
-          </p>
+          <p>{channel?.description || 'No channel description yet.'}</p>
 
           <div className="channel-about-grid">
             <div className="channel-about-box">
@@ -246,7 +256,7 @@ function ChannelPage() {
 
             <div className="channel-about-box">
               <span>Subscribers</span>
-              <strong>{channel?.subscribers_count || 0}</strong>
+              <strong>{channel?.subscriber_count || channel?.subscribers_count || 0}</strong>
             </div>
 
             <div className="channel-about-box">
@@ -270,13 +280,13 @@ function ChannelPage() {
           </div>
 
           <div className="channel-videos-grid">
-            {demoChannelVideos.map((video) => (
-              <div className="channel-video-card" key={video.id}>
+            {demoChannelVideos.map((item) => (
+              <div className="channel-video-card" key={item.id}>
                 <div className="channel-video-thumb">Video</div>
 
                 <div className="channel-video-info">
-                  <h3>{video.title}</h3>
-                  <p>{video.meta}</p>
+                  <h3>{item.title}</h3>
+                  <p>{item.meta}</p>
                   <a href="/watch?slug=your-video-slug" className="channel-watch-link">
                     Open Watch Page
                   </a>

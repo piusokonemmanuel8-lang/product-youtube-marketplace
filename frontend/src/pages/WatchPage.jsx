@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   addVideoComment,
   addVideoReaction,
@@ -15,6 +15,7 @@ import {
   shareVideo,
   unsaveVideo,
 } from '../services/watchService';
+import './WatchPage.css';
 
 function normalizeArrayResponse(data) {
   if (Array.isArray(data)) return data;
@@ -22,103 +23,99 @@ function normalizeArrayResponse(data) {
   if (Array.isArray(data?.comments)) return data.comments;
   if (Array.isArray(data?.videos)) return data.videos;
   if (Array.isArray(data?.related)) return data.related;
+  if (Array.isArray(data?.related_videos)) return data.related_videos;
   if (Array.isArray(data?.tags)) return data.tags;
   return [];
 }
 
-function getQueryParam(name) {
+function getSlugFromUrl() {
+  const path = window.location.pathname || '';
+  const segments = path.split('/').filter(Boolean);
+  const watchIndex = segments.indexOf('watch');
+
+  if (watchIndex !== -1 && segments[watchIndex + 1]) {
+    return decodeURIComponent(segments[watchIndex + 1]);
+  }
+
   const params = new URLSearchParams(window.location.search);
-  return params.get(name);
+  return params.get('slug') || '';
 }
 
-function getDemoWatchData(slug) {
-  return {
-    video: {
-      id: 9999,
-      slug,
-      title: 'Demo Video Preview Page',
-      description:
-        'This is demo watch content because no real video exists yet in the database. Once real videos are available, this page will automatically use the actual backend response.',
-      views_count: 2450,
-      published_at: 'Demo mode',
-      buy_link: '#',
-      video_url: '',
-    },
-    channel: {
-      id: 888,
-      slug: 'demo-channel',
-      channel_slug: 'demo-channel',
-      name: 'VideoGad Demo Channel',
-      channel_name: 'VideoGad Demo Channel',
-      subscribers_count: 1250,
-    },
-    saved: false,
-    isDemo: true,
-  };
+function formatDate(value) {
+  if (!value) return 'Recently uploaded';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
-function getDemoRelatedVideos() {
-  return [
-    {
-      id: 1,
-      slug: 'demo-related-video-1',
-      title: 'Demo Related Video One',
-      creator_name: 'Demo Creator',
-      views: 1200,
-    },
-    {
-      id: 2,
-      slug: 'demo-related-video-2',
-      title: 'Demo Related Video Two',
-      creator_name: 'Demo Creator',
-      views: 980,
-    },
-    {
-      id: 3,
-      slug: 'demo-related-video-3',
-      title: 'Demo Related Video Three',
-      creator_name: 'Demo Creator',
-      views: 2100,
-    },
-  ];
+function formatViews(value) {
+  const views = Number(value || 0);
+  if (Number.isNaN(views)) return '0 views';
+  return `${views.toLocaleString()} views`;
 }
 
-function getDemoComments() {
-  return [
-    {
-      id: 1,
-      author_name: 'John',
-      content: 'This is demo comment content until real video comments are available.',
-      created_at: 'Just now',
-    },
-    {
-      id: 2,
-      author_name: 'Mary',
-      content: 'The watch page layout is working fine in demo mode.',
-      created_at: '2 mins ago',
-    },
-  ];
+function getShareChoice() {
+  const choice = window.prompt(
+    'Share options: copy_link, whatsapp, facebook, x, telegram, email',
+    'copy_link'
+  );
+
+  return (choice || 'copy_link').trim().toLowerCase();
 }
 
-function getDemoTags() {
-  return [{ name: 'demo' }, { name: 'preview' }, { name: 'videogad' }];
-}
+function openShareLink(shareType, url, title) {
+  const encodedUrl = encodeURIComponent(url);
+  const encodedTitle = encodeURIComponent(title || 'VideoGad video');
 
-function getDemoReactions() {
-  return {
-    likes_count: 140,
-    dislikes_count: 9,
-  };
-}
+  if (shareType === 'whatsapp') {
+    window.open(
+      `https://wa.me/?text=${encodedTitle}%20${encodedUrl}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+    return;
+  }
 
-function getDemoShareSummary() {
-  return {
-    total_shares: 27,
-  };
+  if (shareType === 'facebook') {
+    window.open(
+      `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+    return;
+  }
+
+  if (shareType === 'x') {
+    window.open(
+      `https://twitter.com/intent/tweet?text=${encodedTitle}&url=${encodedUrl}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+    return;
+  }
+
+  if (shareType === 'telegram') {
+    window.open(
+      `https://t.me/share/url?url=${encodedUrl}&text=${encodedTitle}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+    return;
+  }
+
+  if (shareType === 'email') {
+    window.location.href = `mailto:?subject=${encodedTitle}&body=${encodedUrl}`;
+  }
 }
 
 function WatchPage() {
-  const slug = getQueryParam('slug') || 'sample-video';
+  const [slug, setSlug] = useState(getSlugFromUrl());
   const [watchData, setWatchData] = useState(null);
   const [relatedVideos, setRelatedVideos] = useState([]);
   const [comments, setComments] = useState([]);
@@ -134,31 +131,98 @@ function WatchPage() {
   const [reactionAction, setReactionAction] = useState(false);
   const [commentLoading, setCommentLoading] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
-  const [isDemoMode, setIsDemoMode] = useState(false);
+
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    const syncSlug = () => setSlug(getSlugFromUrl());
+
+    const originalPushState = window.history.pushState;
+    const originalReplaceState = window.history.replaceState;
+
+    window.history.pushState = function (...args) {
+      originalPushState.apply(window.history, args);
+      syncSlug();
+    };
+
+    window.history.replaceState = function (...args) {
+      originalReplaceState.apply(window.history, args);
+      syncSlug();
+    };
+
+    window.addEventListener('popstate', syncSlug);
+
+    return () => {
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
+      window.removeEventListener('popstate', syncSlug);
+    };
+  }, []);
+
+  const video = useMemo(() => {
+    return watchData?.video || watchData?.data || watchData || {};
+  }, [watchData]);
+
+  const videoId = useMemo(() => {
+    return video?.id || watchData?.id || watchData?.data?.id || null;
+  }, [video, watchData]);
+
+  const channel = useMemo(() => {
+    return watchData?.channel || video?.channel || {};
+  }, [watchData, video]);
+
+  const channelSlug = useMemo(() => {
+    return (
+      channel?.channel_slug ||
+      channel?.slug ||
+      channel?.handle ||
+      channel?.username ||
+      ''
+    );
+  }, [channel]);
 
   useEffect(() => {
     async function loadWatchPage() {
+      if (!slug) {
+        setLoading(false);
+        setErrorMessage('Video slug not found.');
+        return;
+      }
+
       setLoading(true);
       setErrorMessage('');
       setPageMessage('');
 
       try {
         const watchResponse = await getWatchPageBySlug(slug);
-        setWatchData(watchResponse);
 
-        const videoId =
-          watchResponse?.video?.id ||
+        const resolvedVideo =
+          watchResponse?.video || watchResponse?.data || watchResponse || {};
+
+        const resolvedVideoId =
+          resolvedVideo?.id ||
           watchResponse?.id ||
           watchResponse?.data?.id;
 
-        if (!videoId) {
+        if (!resolvedVideoId) {
           throw new Error('Video id not found in watch response');
         }
 
-        await Promise.all([
-          addVideoView(videoId).catch(() => null),
-          addWatchHistory(videoId).catch(() => null),
-        ]);
+        const oldViewCount =
+          watchResponse?.metrics?.total_views ??
+          resolvedVideo?.views_count ??
+          resolvedVideo?.views ??
+          0;
+
+        let viewResponse = null;
+
+        try {
+          viewResponse = await addVideoView(resolvedVideoId);
+        } catch (error) {
+          viewResponse = null;
+        }
+
+        await addWatchHistory(resolvedVideoId).catch(() => null);
 
         const [
           relatedResponse,
@@ -167,12 +231,32 @@ function WatchPage() {
           reactionsResponse,
           shareSummaryResponse,
         ] = await Promise.all([
-          getRelatedVideos(videoId).catch(() => []),
-          getVideoComments(videoId).catch(() => []),
-          getVideoTags(videoId).catch(() => []),
-          getVideoReactions(videoId).catch(() => null),
-          getShareSummary(videoId).catch(() => null),
+          getRelatedVideos(resolvedVideoId).catch(() => []),
+          getVideoComments(resolvedVideoId).catch(() => []),
+          getVideoTags(resolvedVideoId).catch(() => []),
+          getVideoReactions(resolvedVideoId).catch(() => null),
+          getShareSummary(resolvedVideoId).catch(() => null),
         ]);
+
+        const newViewCount =
+          viewResponse?.metrics?.total_views ??
+          viewResponse?.total_views ??
+          viewResponse?.views_count ??
+          viewResponse?.views ??
+          (Number(oldViewCount) + 1);
+
+        setWatchData({
+          ...watchResponse,
+          video: {
+            ...resolvedVideo,
+            views_count: newViewCount,
+            views: newViewCount,
+          },
+          metrics: {
+            ...(watchResponse?.metrics || {}),
+            total_views: newViewCount,
+          },
+        });
 
         setRelatedVideos(normalizeArrayResponse(relatedResponse));
         setComments(normalizeArrayResponse(commentsResponse));
@@ -182,31 +266,20 @@ function WatchPage() {
 
         const savedFlag =
           watchResponse?.saved === true ||
-          watchResponse?.video?.saved === true ||
-          watchResponse?.is_saved === true;
+          resolvedVideo?.saved === true ||
+          watchResponse?.is_saved === true ||
+          watchResponse?.saved_video === true;
 
         setIsSaved(savedFlag);
-        setIsDemoMode(false);
       } catch (error) {
-        const message = error.message || '';
-
-        if (
-          message.toLowerCase().includes('video not found') ||
-          message.toLowerCase().includes('not found')
-        ) {
-          setWatchData(getDemoWatchData(slug));
-          setRelatedVideos(getDemoRelatedVideos());
-          setComments(getDemoComments());
-          setTags(getDemoTags());
-          setReactions(getDemoReactions());
-          setShareSummary(getDemoShareSummary());
-          setIsSaved(false);
-          setIsDemoMode(true);
-          setPageMessage('Demo mode is showing because no real video exists yet.');
-          setErrorMessage('');
-        } else {
-          setErrorMessage(message || 'Failed to load watch page');
-        }
+        setWatchData(null);
+        setRelatedVideos([]);
+        setComments([]);
+        setTags([]);
+        setReactions(null);
+        setShareSummary(null);
+        setIsSaved(false);
+        setErrorMessage(error.message || 'Failed to load watch page');
       } finally {
         setLoading(false);
       }
@@ -215,42 +288,28 @@ function WatchPage() {
     loadWatchPage();
   }, [slug]);
 
-  const videoId = useMemo(() => {
-    return watchData?.video?.id || watchData?.id || watchData?.data?.id || null;
-  }, [watchData]);
+  useEffect(() => {
+    if (!videoRef.current || !video?.video_url) return;
 
-  const video = useMemo(() => {
-    return watchData?.video || watchData?.data || watchData || {};
-  }, [watchData]);
+    const playVideo = async () => {
+      try {
+        videoRef.current.muted = true;
+        await videoRef.current.play();
+      } catch (error) {}
+    };
 
-  const channel = useMemo(() => {
-    return watchData?.channel || video?.channel || {};
-  }, [watchData, video]);
-
-  const channelSlug = useMemo(() => {
-    return (
-      channel?.slug ||
-      channel?.channel_slug ||
-      channel?.handle ||
-      channel?.username ||
-      'demo-channel'
-    );
-  }, [channel]);
+    playVideo();
+  }, [watchData, video?.video_url]);
 
   async function handleReact(type) {
     if (!videoId) return;
-
-    if (isDemoMode) {
-      setPageMessage(`Demo mode: ${type} clicked.`);
-      return;
-    }
 
     setReactionAction(true);
     setPageMessage('');
     setErrorMessage('');
 
     try {
-      await addVideoReaction(videoId, { type });
+      await addVideoReaction(videoId, { reaction_type: type });
       const updated = await getVideoReactions(videoId);
       setReactions(updated || null);
       setPageMessage(`${type} reaction added.`);
@@ -263,11 +322,6 @@ function WatchPage() {
 
   async function handleRemoveReaction() {
     if (!videoId) return;
-
-    if (isDemoMode) {
-      setPageMessage('Demo mode: reaction removed.');
-      return;
-    }
 
     setReactionAction(true);
     setPageMessage('');
@@ -287,12 +341,6 @@ function WatchPage() {
 
   async function handleSaveToggle() {
     if (!videoId) return;
-
-    if (isDemoMode) {
-      setIsSaved((prev) => !prev);
-      setPageMessage(isSaved ? 'Demo mode: unsaved.' : 'Demo mode: saved.');
-      return;
-    }
 
     setSavingAction(true);
     setPageMessage('');
@@ -318,32 +366,41 @@ function WatchPage() {
   async function handleShare() {
     if (!videoId) return;
 
-    if (isDemoMode) {
-      try {
-        await navigator.clipboard.writeText(window.location.href);
-      } catch (error) {
-        // ignore
-      }
-      setPageMessage('Demo mode: share clicked and link copied.');
-      return;
-    }
-
     setShareLoading(true);
     setPageMessage('');
     setErrorMessage('');
 
     try {
-      await shareVideo(videoId, { platform: 'copy_link' });
-      const summary = await getShareSummary(videoId).catch(() => null);
-      setShareSummary(summary || null);
+      const url = window.location.href;
+      const title = video?.title || 'VideoGad video';
 
-      try {
-        await navigator.clipboard.writeText(window.location.href);
-      } catch (error) {
-        // ignore
+      if (navigator.share) {
+        await navigator.share({
+          title,
+          text: title,
+          url,
+        });
+
+        await shareVideo(videoId, { share_type: 'native' }).catch(() =>
+          shareVideo(videoId, { share_type: 'copy_link' })
+        );
+      } else {
+        const choice = getShareChoice();
+
+        if (choice === 'copy_link') {
+          await navigator.clipboard.writeText(url).catch(() => {});
+        } else {
+          openShareLink(choice, url, title);
+        }
+
+        await shareVideo(videoId, { share_type: choice || 'copy_link' }).catch(() =>
+          shareVideo(videoId, { share_type: 'copy_link' })
+        );
       }
 
-      setPageMessage('Share recorded and link copied.');
+      const summary = await getShareSummary(videoId).catch(() => null);
+      setShareSummary(summary || null);
+      setPageMessage('Share completed.');
     } catch (error) {
       setErrorMessage(error.message || 'Failed to share video');
     } finally {
@@ -355,26 +412,13 @@ function WatchPage() {
     event.preventDefault();
     if (!videoId || !commentText.trim()) return;
 
-    if (isDemoMode) {
-      const demoComment = {
-        id: Date.now(),
-        author_name: 'You',
-        content: commentText,
-        created_at: 'Just now',
-      };
-      setComments((prev) => [demoComment, ...prev]);
-      setCommentText('');
-      setPageMessage('Demo mode: comment added locally.');
-      return;
-    }
-
     setCommentLoading(true);
     setPageMessage('');
     setErrorMessage('');
 
     try {
       await addVideoComment(videoId, {
-        content: commentText,
+        comment_text: commentText.trim(),
       });
 
       const updatedComments = await getVideoComments(videoId);
@@ -410,11 +454,18 @@ function WatchPage() {
         <main className="watch-main">
           <div className="watch-player">
             {video?.video_url ? (
-              <video className="watch-real-video" controls src={video.video_url} />
+              <video
+                ref={videoRef}
+                className="watch-real-video"
+                controls
+                autoPlay
+                muted
+                playsInline
+                src={video.video_url}
+                poster={video?.thumbnail_url || ''}
+              />
             ) : (
-              <div className="watch-player-screen">
-                {isDemoMode ? 'Demo Video Preview' : 'Video Player Placeholder'}
-              </div>
+              <div className="watch-player-screen">Video Player Placeholder</div>
             )}
           </div>
 
@@ -432,10 +483,14 @@ function WatchPage() {
             <div className="watch-meta-row">
               <div>
                 <div className="watch-meta-main">
-                  {video?.views_count || video?.views || 0} views
+                  {formatViews(
+                    watchData?.metrics?.total_views ??
+                    video?.views_count ??
+                    video?.views
+                  )}
                 </div>
                 <div className="watch-meta-sub">
-                  {video?.created_at || video?.published_at || 'Recently uploaded'}
+                  {formatDate(video?.published_at || video?.created_at)}
                 </div>
               </div>
 
@@ -446,7 +501,7 @@ function WatchPage() {
                   onClick={() => handleReact('like')}
                   disabled={reactionAction}
                 >
-                  Like {reactions?.likes_count ?? reactions?.likes ?? ''}
+                  Like {reactions?.likes_count ?? reactions?.likes ?? 0}
                 </button>
 
                 <button
@@ -455,7 +510,7 @@ function WatchPage() {
                   onClick={() => handleReact('dislike')}
                   disabled={reactionAction}
                 >
-                  Dislike {reactions?.dislikes_count ?? reactions?.dislikes ?? ''}
+                  Dislike {reactions?.dislikes_count ?? reactions?.dislikes ?? 0}
                 </button>
 
                 <button
@@ -482,12 +537,12 @@ function WatchPage() {
                   onClick={handleShare}
                   disabled={shareLoading}
                 >
-                  Share {shareSummary?.total_shares ?? shareSummary?.shares ?? ''}
+                  Share {shareSummary?.total_shares ?? shareSummary?.shares ?? 0}
                 </button>
 
                 <a
                   className="watch-buy-btn"
-                  href={video?.buy_link || '#'}
+                  href={video?.buy_link || video?.buy_now_url || '#'}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -508,13 +563,18 @@ function WatchPage() {
                   {channel?.name || channel?.channel_name || 'Creator Channel'}
                 </h3>
                 <p className="watch-creator-subs">
-                  {channel?.subscribers_count || channel?.subscribers || 0} subscribers
+                  {Number(
+                    channel?.subscriber_count ??
+                    channel?.subscribers_count ??
+                    channel?.subscribers ??
+                    0
+                  ).toLocaleString()} subscribers
                 </p>
               </div>
             </div>
 
             <a
-              href={`/channel?slug=${channelSlug}`}
+              href={channelSlug ? `/channel/${channelSlug}` : '/channel'}
               className="watch-subscribe-btn"
             >
               Visit Channel
@@ -569,6 +629,7 @@ function WatchPage() {
                     'Viewer';
 
                   const content =
+                    comment?.comment_text ||
                     comment?.content ||
                     comment?.comment ||
                     comment?.body ||
@@ -583,7 +644,7 @@ function WatchPage() {
                       <div>
                         <p className="watch-comment-name">
                           {commentName}
-                          <span>{comment?.created_at || 'Just now'}</span>
+                          <span>{formatDate(comment?.created_at || comment?.date || 'Just now')}</span>
                         </p>
                         <p className="watch-comment-text">{content}</p>
                       </div>
@@ -611,19 +672,25 @@ function WatchPage() {
                   item?.channel?.name ||
                   'Creator';
                 const relatedViews = item?.views || item?.views_count || 0;
+                const thumb = item?.thumbnail_url || '';
 
                 return (
                   <a
-                    href={`/watch?slug=${relatedSlug}`}
+                    href={relatedSlug ? `/watch/${relatedSlug}` : '/watch'}
                     className="watch-related-item"
                     key={item?.id || index}
                   >
-                    <div className="watch-related-thumb">Related</div>
+                    <div
+                      className={`watch-related-thumb ${thumb ? 'has-image' : ''}`}
+                      style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
+                    >
+                      {!thumb ? 'Related' : null}
+                    </div>
 
                     <div className="watch-related-info">
                       <h4>{relatedTitle}</h4>
                       <p>{relatedCreator}</p>
-                      <p>{relatedViews} views</p>
+                      <p>{Number(relatedViews || 0).toLocaleString()} views</p>
                     </div>
                   </a>
                 );
