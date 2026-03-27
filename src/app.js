@@ -34,13 +34,24 @@ const adSkipRoutes = require('./routes/adSkipRoutes');
 
 const app = express();
 
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '*';
+
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
+
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:5175',
-    'http://localhost:5176',
-  ],
+  origin: true,
   credentials: true,
 }));
 
@@ -55,6 +66,12 @@ app.get('/', (req, res) => {
 app.get('/api/auth/test-root', (req, res) => {
   res.json({
     message: 'APP auth root works',
+  });
+});
+
+app.get('/api/channels-test', (req, res) => {
+  res.json({
+    message: 'channels app route works',
   });
 });
 

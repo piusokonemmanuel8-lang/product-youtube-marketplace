@@ -389,4 +389,24 @@
     flex-direction: column;
     align-items: stretch;
   }
+}.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-input {
+  width: 100%;
+  padding: 13px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #121826;
+  color: #ffffff;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.admin-textarea {
+  min-height: 110px;
+  resize: vertical;
 }

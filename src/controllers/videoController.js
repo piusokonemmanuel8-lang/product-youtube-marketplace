@@ -183,6 +183,45 @@ function canPostBuyNowLink(marketplaceAuth, buyNowUrl) {
   };
 }
 
+async function createModerationQueueItem({
+  videoId,
+  submittedBy,
+  reason = 'video_upload',
+}) {
+  const [existingRows] = await pool.query(
+    `SELECT id
+     FROM moderation_queue
+     WHERE video_id = ?
+     ORDER BY id DESC
+     LIMIT 1`,
+    [videoId]
+  );
+
+  if (existingRows.length) {
+    await pool.query(
+      `UPDATE moderation_queue
+       SET status = 'pending',
+           reviewer_note = NULL,
+           reviewed_at = NULL,
+           reviewed_by = NULL,
+           reason = ?
+       WHERE id = ?`,
+      [reason, existingRows[0].id]
+    );
+
+    return existingRows[0].id;
+  }
+
+  const [result] = await pool.query(
+    `INSERT INTO moderation_queue
+     (video_id, submitted_by, status, reason)
+     VALUES (?, ?, 'pending', ?)`,
+    [videoId, submittedBy, reason]
+  );
+
+  return result.insertId;
+}
+
 async function createVideoUploadUrl(req, res) {
   try {
     const userId = req.user.id;
@@ -386,17 +425,25 @@ async function createVideo(req, res) {
       ]
     );
 
+    const videoId = result.insertId;
+
+    await createModerationQueueItem({
+      videoId,
+      submittedBy: userId,
+      reason: 'video_upload',
+    });
+
     if (externalPlanSubscription) {
       await consumeExternalPlanPostSlot(externalPlanSubscription.id);
     }
 
     const [videos] = await pool.query(
       'SELECT * FROM videos WHERE id = ? LIMIT 1',
-      [result.insertId]
+      [videoId]
     );
 
     return res.status(201).json({
-      message: 'Video created successfully',
+      message: 'Video created successfully and sent for moderation',
       video: videos[0],
     });
   } catch (error) {
@@ -555,7 +602,7 @@ async function getAdminVideoById(req, res) {
 async function updateAdminVideoStatus(req, res) {
   try {
     const { id } = req.params;
-    const { status, moderation_status, visibility, published_at } = req.body;
+    const { status, moderation_status, visibility, published_at, reviewer_note } = req.body;
 
     const [videos] = await pool.query(
       'SELECT * FROM videos WHERE id = ? LIMIT 1',
@@ -594,6 +641,24 @@ async function updateAdminVideoStatus(req, res) {
         currentVideo.id,
       ]
     );
+
+    if (finalModerationStatus === 'approved' || finalModerationStatus === 'rejected') {
+      await pool.query(
+        `UPDATE moderation_queue
+         SET status = ?,
+             reviewer_note = ?,
+             reviewed_at = NOW(),
+             reviewed_by = ?
+         WHERE video_id = ?
+           AND status = 'pending'`,
+        [
+          finalModerationStatus,
+          reviewer_note || null,
+          req.user.id,
+          currentVideo.id,
+        ]
+      );
+    }
 
     const [updatedVideos] = await pool.query(
       'SELECT * FROM videos WHERE id = ? LIMIT 1',
@@ -800,6 +865,20 @@ async function updateMyVideo(req, res) {
       ]
     );
 
+    const finalStatusValue = status || currentVideo.status;
+    const finalModerationStatusValue = moderation_status || currentVideo.moderation_status;
+
+    const shouldReturnToQueue =
+      finalStatusValue === 'draft' && finalModerationStatusValue === 'pending';
+
+    if (shouldReturnToQueue) {
+      await createModerationQueueItem({
+        videoId: currentVideo.id,
+        submittedBy: userId,
+        reason: 'video_update',
+      });
+    }
+
     if (externalPlanSubscription) {
       await consumeExternalPlanPostSlot(externalPlanSubscription.id);
     }
@@ -845,6 +924,7 @@ async function deleteMyVideo(req, res) {
       });
     }
 
+    await pool.query('DELETE FROM moderation_queue WHERE video_id = ?', [videos[0].id]);
     await pool.query('DELETE FROM videos WHERE id = ?', [videos[0].id]);
 
     return res.status(200).json({
@@ -873,6 +953,7 @@ async function deleteAdminVideo(req, res) {
       });
     }
 
+    await pool.query('DELETE FROM moderation_queue WHERE video_id = ?', [videos[0].id]);
     await pool.query('DELETE FROM videos WHERE id = ?', [videos[0].id]);
 
     return res.status(200).json({

@@ -1,5 +1,5 @@
 const API_BASE =
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:5000';
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
 
 function getToken() {
   return (
@@ -8,6 +8,40 @@ function getToken() {
     localStorage.getItem('authToken') ||
     ''
   );
+}
+
+function setToken(token) {
+  localStorage.setItem('token', token);
+}
+
+function setAdminUser(user) {
+  localStorage.setItem('admin_user', JSON.stringify(user || {}));
+}
+
+function setAdminRoles(roles) {
+  localStorage.setItem('admin_roles', JSON.stringify(Array.isArray(roles) ? roles : []));
+}
+
+function getAdminRoles() {
+  try {
+    return JSON.parse(localStorage.getItem('admin_roles') || '[]');
+  } catch (error) {
+    return [];
+  }
+}
+
+function isAdminLoggedIn() {
+  const token = getToken();
+  const roles = getAdminRoles();
+  return !!token && roles.includes('admin');
+}
+
+function logoutAdmin() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('videogad_token');
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('admin_user');
+  localStorage.removeItem('admin_roles');
 }
 
 function buildHeaders(extra = {}) {
@@ -67,77 +101,78 @@ async function safeRequest(path, options = {}, fallback = null) {
   }
 }
 
-async function tryPaths(paths, options = {}) {
-  let lastError = null;
-
-  for (const path of paths) {
-    try {
-      return await request(path, options);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError || new Error('All endpoint attempts failed');
-}
-
-async function tryPathsSafe(paths, options = {}, fallback = null) {
-  try {
-    return await tryPaths(paths, options);
-  } catch (error) {
-    return fallback;
-  }
-}
-
 function normalizeArrayPayload(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.videos)) return payload.videos;
   if (Array.isArray(payload?.items)) return payload.items;
-  if (Array.isArray(payload?.results)) return payload.results;
+  if (Array.isArray(payload?.videos)) return payload.videos;
   if (Array.isArray(payload?.reports)) return payload.reports;
   if (Array.isArray(payload?.categories)) return payload.categories;
+  if (Array.isArray(payload?.queue)) return payload.queue;
   if (Array.isArray(payload?.plans)) return payload.plans;
+  if (Array.isArray(payload?.channels)) return payload.channels;
   return [];
 }
 
 function normalizeVideo(video, index = 0) {
   return {
-    id: video?.id || video?.video_id || video?._id || `video-${index}`,
+    id: video?.id || video?.video_id || `video-${index}`,
+    uuid: video?.uuid || '',
     title: video?.title || video?.name || video?.video_title || 'Untitled video',
     slug: video?.slug || '',
     description: video?.description || '',
-    thumbnail_url: video?.thumbnail_url || video?.thumbnail || '',
+    thumbnail_url:
+      video?.thumbnail_url ||
+      video?.thumbnail ||
+      video?.thumbnail_key ||
+      '',
+    preview_key: video?.preview_key || '',
+    video_key: video?.video_key || '',
     status: video?.status || video?.video_status || 'unknown',
     moderation_status:
-      video?.moderation_status || video?.review_status || video?.queue_status || 'pending',
+      video?.moderation_status ||
+      video?.review_status ||
+      video?.approval_status ||
+      video?.queue_status ||
+      'pending',
     visibility: video?.visibility || 'public',
     creator_name:
       video?.creator_name ||
       video?.creator?.full_name ||
       video?.user?.full_name ||
-      video?.channel_name ||
+      video?.full_name ||
       'Unknown creator',
-    channel_name: video?.channel_name || video?.channel?.name || 'No channel',
+    creator_email:
+      video?.creator_email ||
+      video?.creator?.email ||
+      video?.user?.email ||
+      '',
+    channel_name:
+      video?.channel_name ||
+      video?.channel?.name ||
+      video?.channel_title ||
+      'No channel',
+    channel_handle: video?.channel_handle || '',
+    channel_slug: video?.channel_slug || '',
     created_at: video?.created_at || video?.createdAt || '',
     published_at: video?.published_at || '',
-    views_count: video?.views_count || video?.views || 0,
+    views_count: Number(video?.views_count || video?.views || 0),
     raw: video,
   };
 }
 
 function normalizeQueueItem(item, index = 0) {
   const video = item?.video || item?.video_data || item || {};
-  const normalized = normalizeVideo(video, index);
+  const normalizedVideo = normalizeVideo(video, index);
 
   return {
     id: item?.id || item?.queue_id || `queue-${index}`,
-    video_id: video?.id || video?.video_id || normalized.id,
     queue_status: item?.status || item?.queue_status || 'pending',
     reason: item?.reason || item?.note || '',
-    created_at: item?.created_at || item?.createdAt || '',
     reviewer_note: item?.reviewer_note || '',
-    video: normalized,
+    created_at: item?.created_at || item?.createdAt || '',
+    video_id: item?.video_id || normalizedVideo.id,
+    video: normalizedVideo,
     raw: item,
   };
 }
@@ -154,36 +189,123 @@ function normalizeReport(report, index = 0) {
       report?.reported_by ||
       report?.user?.full_name ||
       report?.reporter?.full_name ||
+      report?.full_name ||
       'Unknown user',
     created_at: report?.created_at || report?.createdAt || '',
     raw: report,
   };
 }
 
+function normalizeChannel(channel, index = 0) {
+  return {
+    id: channel?.id || `channel-${index}`,
+    creator_id: channel?.creator_id || '',
+    user_id: channel?.user_id || '',
+    channel_name: channel?.channel_name || 'Untitled channel',
+    channel_handle: channel?.channel_handle || '',
+    channel_slug: channel?.channel_slug || '',
+    avatar_url: channel?.avatar_url || '',
+    banner_url: channel?.banner_url || '',
+    bio: channel?.bio || '',
+    status: channel?.status || 'active',
+    full_name: channel?.full_name || '',
+    email: channel?.email || '',
+    username: channel?.username || '',
+    created_at: channel?.created_at || channel?.createdAt || '',
+    raw: channel,
+  };
+}
+
 const adminService = {
+  async login(email, password) {
+    const payload = await request('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+
+    const token = payload?.token || '';
+    const user = payload?.user || {};
+    const roles = Array.isArray(payload?.roles) ? payload.roles : [];
+
+    if (!token) {
+      throw new Error('Login token not returned');
+    }
+
+    if (!roles.includes('admin')) {
+      throw new Error('This account is not an admin account');
+    }
+
+    setToken(token);
+    setAdminUser(user);
+    setAdminRoles(roles);
+
+    return payload;
+  },
+
   async getMe() {
     return await safeRequest('/api/auth/me', { method: 'GET' }, null);
   },
 
-  async getVideos() {
-    const payload = await tryPathsSafe(
-      [
-        '/api/admin/videos',
-        '/api/videos/admin',
-        '/api/videos',
-        '/api/moderation-queue',
-      ],
-      { method: 'GET' },
-      []
-    );
+  async verifyAdminSession() {
+    const me = await this.getMe();
 
-    const rows = normalizeArrayPayload(payload);
+    if (!me) return false;
 
-    return rows.map((item, index) => {
-      if (item?.video || item?.video_id || item?.queue_status || item?.review_status) {
-        return normalizeQueueItem(item, index).video;
-      }
-      return normalizeVideo(item, index);
+    const roles = Array.isArray(me?.roles) ? me.roles : [];
+    if (!roles.includes('admin')) return false;
+
+    setAdminUser(me?.user || {});
+    setAdminRoles(roles);
+    return true;
+  },
+
+  isAdminLoggedIn,
+  logoutAdmin,
+
+  async getVideos(params = {}) {
+    return this.getAdminVideos(params);
+  },
+
+  async getAdminVideos(params = {}) {
+    const searchParams = new URLSearchParams();
+
+    if (params.status) {
+      searchParams.set('status', params.status);
+    }
+
+    if (params.moderation_status) {
+      searchParams.set('moderation_status', params.moderation_status);
+    }
+
+    if (params.limit) {
+      searchParams.set('limit', String(params.limit));
+    }
+
+    const query = searchParams.toString();
+    const path = query ? `/api/videos/admin/all?${query}` : '/api/videos/admin/all';
+
+    const payload = await safeRequest(path, { method: 'GET' }, []);
+    return normalizeArrayPayload(payload).map((video, index) => normalizeVideo(video, index));
+  },
+
+  async getAdminVideoById(videoId) {
+    const payload = await request(`/api/videos/admin/${videoId}`, {
+      method: 'GET',
+    });
+
+    return normalizeVideo(payload?.video || payload, 0);
+  },
+
+  async updateAdminVideoStatus(videoId, payload) {
+    return await request(`/api/videos/admin/${videoId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteAdminVideo(videoId) {
+    return await request(`/api/videos/admin/${videoId}`, {
+      method: 'DELETE',
     });
   },
 
@@ -193,62 +315,52 @@ const adminService = {
   },
 
   async reviewModeration(queueId, action, reviewer_note = '') {
-    return request(`/api/moderation-queue/${queueId}/review`, {
+    return await request(`/api/moderation-queue/${queueId}/review`, {
       method: 'PUT',
       body: JSON.stringify({
         action,
         reviewer_note,
-        status: action === 'approve' ? 'approved' : 'rejected',
       }),
     });
   },
 
-  async approveVideo(videoOrQueueId) {
-    try {
-      return await tryPaths(
-        [
-          `/api/admin/videos/${videoOrQueueId}/status`,
-          `/api/videos/${videoOrQueueId}/status`,
-        ],
-        {
-          method: 'PUT',
-          body: JSON.stringify({
-            status: 'published',
-            moderation_status: 'approved',
-          }),
-        }
-      );
-    } catch (error) {
-      return this.reviewModeration(videoOrQueueId, 'approve');
+  async getAdminChannels(params = {}) {
+    const searchParams = new URLSearchParams();
+
+    if (params.status) {
+      searchParams.set('status', params.status);
     }
+
+    if (params.limit) {
+      searchParams.set('limit', String(params.limit));
+    }
+
+    const query = searchParams.toString();
+    const path = query ? `/api/channels/admin/all?${query}` : '/api/channels/admin/all';
+
+    const payload = await safeRequest(path, { method: 'GET' }, []);
+    return normalizeArrayPayload(payload).map((channel, index) => normalizeChannel(channel, index));
   },
 
-  async rejectVideo(videoOrQueueId, reviewer_note = '') {
-    try {
-      return await tryPaths(
-        [
-          `/api/admin/videos/${videoOrQueueId}/status`,
-          `/api/videos/${videoOrQueueId}/status`,
-        ],
-        {
-          method: 'PUT',
-          body: JSON.stringify({
-            status: 'rejected',
-            moderation_status: 'rejected',
-            reviewer_note,
-          }),
-        }
-      );
-    } catch (error) {
-      return this.reviewModeration(videoOrQueueId, 'reject', reviewer_note);
-    }
+  async getAdminChannelById(channelId) {
+    const payload = await request(`/api/channels/admin/${channelId}`, {
+      method: 'GET',
+    });
+
+    return normalizeChannel(payload?.channel || payload, 0);
   },
 
-  async deleteVideo(videoId) {
-    return tryPaths(
-      [`/api/admin/videos/${videoId}`, `/api/videos/${videoId}`],
-      { method: 'DELETE' }
-    );
+  async updateAdminChannel(channelId, payload) {
+    return await request(`/api/channels/admin/${channelId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteAdminChannel(channelId) {
+    return await request(`/api/channels/admin/${channelId}`, {
+      method: 'DELETE',
+    });
   },
 
   async getReports() {
@@ -257,7 +369,7 @@ const adminService = {
   },
 
   async updateReportStatus(reportId, status) {
-    return request(`/api/reports/${reportId}/status`, {
+    return await request(`/api/reports/${reportId}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status }),
     });
@@ -273,27 +385,49 @@ const adminService = {
     return normalizeArrayPayload(payload);
   },
 
+  async createCategory(payload) {
+    return await request('/api/categories', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateCategory(categoryId, payload) {
+    return await request(`/api/categories/${categoryId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteCategory(categoryId) {
+    return await request(`/api/categories/${categoryId}`, {
+      method: 'DELETE',
+    });
+  },
+
   async getExternalPostingPlans() {
     const payload = await safeRequest('/api/external-posting-plans', { method: 'GET' }, []);
     return normalizeArrayPayload(payload);
   },
 
-  async getCreatorPayoutRequests() {
-    const payload = await safeRequest('/api/creator/payout-requests', { method: 'GET' }, []);
-    return normalizeArrayPayload(payload);
+  async approveAdCampaign(campaignId) {
+    return await request(`/api/ads/campaigns/${campaignId}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify({}),
+    });
   },
 
-  async getPayoutTransactions() {
-    const payload = await safeRequest('/api/creator/payout-transactions', { method: 'GET' }, []);
-    return normalizeArrayPayload(payload);
+  async approveAdVideo(videoId) {
+    return await request(`/api/ads/videos/${videoId}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify({}),
+    });
   },
 
-  async getDashboardSummary() {
-    return await safeRequest('/api/creator/dashboard-summary', { method: 'GET' }, {});
-  },
-
-  async getAnalyticsOverview() {
-    return await safeRequest('/api/creator/analytics-overview', { method: 'GET' }, {});
+  async getCampaignStats(campaignId) {
+    return await request(`/api/ads/campaigns/${campaignId}/stats`, {
+      method: 'GET',
+    });
   },
 };
 

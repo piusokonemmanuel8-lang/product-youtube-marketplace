@@ -16,6 +16,7 @@ import CreatorEarningsPage from './pages/CreatorEarningsPage';
 import CreatorPayoutPage from './pages/CreatorPayoutPage';
 import CreatorMarketplaceAuthPage from './pages/CreatorMarketplaceAuthPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
+import AdminLoginPage from './pages/AdminLoginPage';
 
 function App() {
   const getCurrentPath = () => {
@@ -52,6 +53,10 @@ function App() {
       window.removeEventListener('popstate', updatePath);
     };
   }, []);
+
+  if (path === '/admin-login') {
+    return <AdminLoginPage />;
+  }
 
   if (path === '/admin-dashboard') {
     return <AdminDashboardPage />;
