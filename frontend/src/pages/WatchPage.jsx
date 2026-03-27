@@ -114,6 +114,20 @@ function openShareLink(shareType, url, title) {
   }
 }
 
+function getCommentName(comment) {
+  return (
+    comment?.user?.full_name ||
+    comment?.user?.username ||
+    comment?.full_name ||
+    comment?.username ||
+    comment?.user_full_name ||
+    comment?.user_username ||
+    comment?.author_name ||
+    comment?.name ||
+    'Viewer'
+  );
+}
+
 function WatchPage() {
   const [slug, setSlug] = useState(getSlugFromUrl());
   const [watchData, setWatchData] = useState(null);
@@ -432,6 +446,21 @@ function WatchPage() {
     }
   }
 
+  async function handleRelatedVideoClick(event, relatedVideoId, relatedSlug) {
+    if (!relatedSlug) return;
+
+    event.preventDefault();
+
+    try {
+      if (relatedVideoId) {
+        await addVideoView(relatedVideoId).catch(() => null);
+        await addWatchHistory(relatedVideoId).catch(() => null);
+      }
+    } catch (error) {}
+
+    window.location.href = `/watch/${relatedSlug}`;
+  }
+
   if (loading) {
     return (
       <div className="watch-loading-page">
@@ -485,8 +514,8 @@ function WatchPage() {
                 <div className="watch-meta-main">
                   {formatViews(
                     watchData?.metrics?.total_views ??
-                    video?.views_count ??
-                    video?.views
+                      video?.views_count ??
+                      video?.views
                   )}
                 </div>
                 <div className="watch-meta-sub">
@@ -565,9 +594,9 @@ function WatchPage() {
                 <p className="watch-creator-subs">
                   {Number(
                     channel?.subscriber_count ??
-                    channel?.subscribers_count ??
-                    channel?.subscribers ??
-                    0
+                      channel?.subscribers_count ??
+                      channel?.subscribers ??
+                      0
                   ).toLocaleString()} subscribers
                 </p>
               </div>
@@ -622,11 +651,7 @@ function WatchPage() {
             <div className="watch-comments-list">
               {comments.length ? (
                 comments.map((comment, index) => {
-                  const commentName =
-                    comment?.user?.full_name ||
-                    comment?.user?.username ||
-                    comment?.author_name ||
-                    'Viewer';
+                  const commentName = getCommentName(comment);
 
                   const content =
                     comment?.comment_text ||
@@ -673,12 +698,16 @@ function WatchPage() {
                   'Creator';
                 const relatedViews = item?.views || item?.views_count || 0;
                 const thumb = item?.thumbnail_url || '';
+                const relatedVideoId = item?.id || item?.video_id || null;
 
                 return (
                   <a
                     href={relatedSlug ? `/watch/${relatedSlug}` : '/watch'}
                     className="watch-related-item"
                     key={item?.id || index}
+                    onClick={(event) =>
+                      handleRelatedVideoClick(event, relatedVideoId, relatedSlug)
+                    }
                   >
                     <div
                       className={`watch-related-thumb ${thumb ? 'has-image' : ''}`}

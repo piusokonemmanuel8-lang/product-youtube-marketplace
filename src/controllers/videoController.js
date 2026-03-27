@@ -48,11 +48,21 @@ function buildMediaUrl(key) {
 function normalizeVideoRow(video) {
   if (!video) return video;
 
+  const resolvedViews =
+    video.views_count ??
+    video.total_views ??
+    video.views ??
+    video.view_count ??
+    0;
+
   return {
     ...video,
-    video_url: buildMediaUrl(video.video_key),
-    thumbnail_url: buildMediaUrl(video.thumbnail_key),
-    preview_url: buildMediaUrl(video.preview_key),
+    video_url: video.video_url || buildMediaUrl(video.video_key),
+    thumbnail_url: video.thumbnail_url || buildMediaUrl(video.thumbnail_key),
+    preview_url: video.preview_url || buildMediaUrl(video.preview_key),
+    views_count: Number(resolvedViews || 0),
+    total_views: Number(resolvedViews || 0),
+    views: Number(resolvedViews || 0),
   };
 }
 
@@ -550,25 +560,90 @@ async function getPublicVideos(req, res) {
     const limit = Number(req.query.limit) > 0 ? Number(req.query.limit) : 24;
 
     const [videos] = await pool.query(
-      `SELECT 
-        v.*,
+      `SELECT
+        v.id,
+        v.uuid,
+        v.creator_id,
+        v.channel_id,
+        v.category_id,
+        v.title,
+        v.slug,
+        v.description,
+        v.video_type,
+        v.source_type,
+        v.storage_provider,
+        v.video_key,
+        v.stream_key,
+        v.thumbnail_key,
+        v.preview_key,
+        v.duration_seconds,
+        v.visibility,
+        v.status,
+        v.moderation_status,
+        v.comments_enabled,
+        v.buy_now_enabled,
+        v.buy_now_url,
+        v.is_monetized,
+        v.published_at,
+        v.created_at,
+        v.updated_at,
         c.channel_name,
         c.channel_handle,
-        c.channel_slug
+        c.channel_slug,
+        COALESCE(vv.total_views, 0) AS views_count
        FROM videos v
        LEFT JOIN channels c ON v.channel_id = c.id
+       LEFT JOIN (
+         SELECT video_id, COUNT(*) AS total_views
+         FROM video_views
+         GROUP BY video_id
+       ) vv ON vv.video_id = v.id
        WHERE v.visibility = 'public'
          AND v.status = 'published'
          AND v.moderation_status = 'approved'
-       ORDER BY 
-         COALESCE(v.published_at, v.created_at) DESC,
-         v.id DESC
+       ORDER BY COALESCE(v.published_at, v.created_at) DESC, v.id DESC
        LIMIT ?`,
       [limit]
     );
 
     return res.status(200).json({
-      videos: videos.map(normalizeVideoRow),
+      videos: videos.map((video) => ({
+        id: video.id,
+        uuid: video.uuid,
+        creator_id: video.creator_id,
+        channel_id: video.channel_id,
+        category_id: video.category_id,
+        title: video.title,
+        slug: video.slug,
+        description: video.description,
+        video_type: video.video_type,
+        source_type: video.source_type,
+        storage_provider: video.storage_provider,
+        video_key: video.video_key,
+        stream_key: video.stream_key,
+        thumbnail_key: video.thumbnail_key,
+        preview_key: video.preview_key,
+        duration_seconds: video.duration_seconds,
+        visibility: video.visibility,
+        status: video.status,
+        moderation_status: video.moderation_status,
+        comments_enabled: video.comments_enabled,
+        buy_now_enabled: video.buy_now_enabled,
+        buy_now_url: video.buy_now_url,
+        is_monetized: video.is_monetized,
+        published_at: video.published_at,
+        created_at: video.created_at,
+        updated_at: video.updated_at,
+        channel_name: video.channel_name,
+        channel_handle: video.channel_handle,
+        channel_slug: video.channel_slug,
+        video_url: buildMediaUrl(video.video_key),
+        thumbnail_url: buildMediaUrl(video.thumbnail_key),
+        preview_url: buildMediaUrl(video.preview_key),
+        views_count: Number(video.views_count || 0),
+        total_views: Number(video.views_count || 0),
+        views: Number(video.views_count || 0),
+      })),
     });
   } catch (error) {
     return res.status(500).json({

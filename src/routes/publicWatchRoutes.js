@@ -1,16 +1,15 @@
 const express = require('express');
 const router = express.Router();
 
-const {
-  getPublicWatchPage,
-  recordPublicVideoView,
-  getRelatedVideos,
-} = require('../controllers/publicWatchController');
+const publicWatchController = require('../controllers/publicWatchController');
 
-const { protect } = require('../middleware/authMiddleware');
+console.log('publicWatchController keys:', Object.keys(publicWatchController || {}));
+console.log('getPublicWatchPage type:', typeof publicWatchController.getPublicWatchPage);
+console.log('recordPublicVideoView type:', typeof publicWatchController.recordPublicVideoView);
+console.log('getRelatedVideos type:', typeof publicWatchController.getRelatedVideos);
 
-router.get('/watch/:slug', getPublicWatchPage);
-router.post('/videos/:videoId/views', protect, recordPublicVideoView);
-router.get('/videos/:videoId/related', getRelatedVideos);
+router.get('/watch/:slug', publicWatchController.getPublicWatchPage);
+router.post('/videos/:videoId/views', publicWatchController.recordPublicVideoView);
+router.get('/videos/:videoId/related', publicWatchController.getRelatedVideos);
 
 module.exports = router;

@@ -1,9 +1,23 @@
 const pool = require('../config/db');
 
+function mapCommentRow(row) {
+  return {
+    ...row,
+    author_name: row.user_full_name || row.user_username || 'Viewer',
+    user: {
+      id: row.user_id,
+      full_name: row.user_full_name || null,
+      username: row.user_username || null,
+      email: row.user_email || null,
+    },
+  };
+}
+
 async function createComment(req, res) {
   try {
     const userId = req.user.id;
-    const { videoId } = req.params;
+    const { videoId, id } = req.params;
+    const finalVideoId = videoId || id;
     const { comment_text, parent_id } = req.body;
 
     if (!comment_text || !String(comment_text).trim()) {
@@ -16,7 +30,7 @@ async function createComment(req, res) {
 
     const [videos] = await pool.query(
       'SELECT id, comments_enabled FROM videos WHERE id = ? LIMIT 1',
-      [videoId]
+      [finalVideoId]
     );
 
     if (!videos.length) {
@@ -47,7 +61,7 @@ async function createComment(req, res) {
 
       const parentComment = parentComments[0];
 
-      if (Number(parentComment.video_id) !== Number(videoId)) {
+      if (Number(parentComment.video_id) !== Number(finalVideoId)) {
         return res.status(400).json({
           message: 'Parent comment does not belong to this video',
         });
@@ -66,7 +80,7 @@ async function createComment(req, res) {
       `INSERT INTO comments
       (video_id, user_id, parent_id, comment_text, like_count, reply_count, status)
       VALUES (?, ?, ?, ?, 0, 0, 'active')`,
-      [videoId, userId, finalParentId, cleanText]
+      [finalVideoId, userId, finalParentId, cleanText]
     );
 
     if (finalParentId) {
@@ -77,13 +91,21 @@ async function createComment(req, res) {
     }
 
     const [comments] = await pool.query(
-      'SELECT * FROM comments WHERE id = ? LIMIT 1',
+      `SELECT
+        c.*,
+        u.full_name AS user_full_name,
+        u.username AS user_username,
+        u.email AS user_email
+       FROM comments c
+       LEFT JOIN users u ON u.id = c.user_id
+       WHERE c.id = ?
+       LIMIT 1`,
       [result.insertId]
     );
 
     return res.status(201).json({
       message: 'Comment created successfully',
-      comment: comments[0],
+      comment: mapCommentRow(comments[0]),
     });
   } catch (error) {
     return res.status(500).json({
@@ -95,11 +117,12 @@ async function createComment(req, res) {
 
 async function getVideoComments(req, res) {
   try {
-    const { videoId } = req.params;
+    const { videoId, id } = req.params;
+    const finalVideoId = videoId || id;
 
     const [videos] = await pool.query(
       'SELECT id FROM videos WHERE id = ? LIMIT 1',
-      [videoId]
+      [finalVideoId]
     );
 
     if (!videos.length) {
@@ -109,15 +132,20 @@ async function getVideoComments(req, res) {
     }
 
     const [comments] = await pool.query(
-      `SELECT *
-       FROM comments
-       WHERE video_id = ? AND status = 'active'
-       ORDER BY created_at DESC`,
-      [videoId]
+      `SELECT
+        c.*,
+        u.full_name AS user_full_name,
+        u.username AS user_username,
+        u.email AS user_email
+       FROM comments c
+       LEFT JOIN users u ON u.id = c.user_id
+       WHERE c.video_id = ? AND c.status = 'active'
+       ORDER BY c.created_at DESC`,
+      [finalVideoId]
     );
 
     return res.status(200).json({
-      comments,
+      comments: comments.map(mapCommentRow),
     });
   } catch (error) {
     return res.status(500).json({
@@ -166,13 +194,21 @@ async function updateMyComment(req, res) {
     );
 
     const [updatedComments] = await pool.query(
-      'SELECT * FROM comments WHERE id = ? LIMIT 1',
+      `SELECT
+        c.*,
+        u.full_name AS user_full_name,
+        u.username AS user_username,
+        u.email AS user_email
+       FROM comments c
+       LEFT JOIN users u ON u.id = c.user_id
+       WHERE c.id = ?
+       LIMIT 1`,
       [commentId]
     );
 
     return res.status(200).json({
       message: 'Comment updated successfully',
-      comment: updatedComments[0],
+      comment: mapCommentRow(updatedComments[0]),
     });
   } catch (error) {
     return res.status(500).json({

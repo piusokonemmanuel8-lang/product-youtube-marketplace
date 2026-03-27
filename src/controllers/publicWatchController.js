@@ -174,9 +174,9 @@ async function getPublicWatchPage(req, res) {
       },
       metrics: {
         total_views: Number(viewRows[0]?.total_views || 0),
+        total_comments: Number(commentCountRows[0]?.total_comments || 0),
         likes_count: Number(reactionRows[0]?.likes_count || 0),
         dislikes_count: Number(reactionRows[0]?.dislikes_count || 0),
-        total_comments: Number(commentCountRows[0]?.total_comments || 0),
         total_shares: Number(shareRows[0]?.total_shares || 0),
       },
       tags: videoTags,
@@ -185,7 +185,7 @@ async function getPublicWatchPage(req, res) {
     });
   } catch (error) {
     return res.status(500).json({
-      message: 'Failed to fetch public watch page',
+      message: 'Failed to fetch watch page',
       error: error.message,
     });
   }
@@ -194,7 +194,9 @@ async function getPublicWatchPage(req, res) {
 async function recordPublicVideoView(req, res) {
   try {
     const userId = req.user ? req.user.id : null;
-    const { videoId } = req.params;
+    const { videoId, id } = req.params;
+    const finalVideoId = videoId || id;
+
     const {
       session_id,
       ip_hash,
@@ -209,7 +211,7 @@ async function recordPublicVideoView(req, res) {
 
     const [videos] = await pool.query(
       'SELECT id FROM videos WHERE id = ? LIMIT 1',
-      [videoId]
+      [finalVideoId]
     );
 
     if (!videos.length) {
@@ -218,7 +220,7 @@ async function recordPublicVideoView(req, res) {
       });
     }
 
-    const [result] = await pool.query(
+    const [insertResult] = await pool.query(
       `INSERT INTO video_views
       (
         video_id,
@@ -235,37 +237,37 @@ async function recordPublicVideoView(req, res) {
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        videoId,
+        finalVideoId,
         userId,
         session_id || null,
         ip_hash || null,
         device_type || null,
         browser || null,
         country_code || null,
-        watch_seconds || 0,
-        completed_percent || 0,
+        Number(watch_seconds || 0),
+        Number(completed_percent || 0),
         source_page || null,
         referrer_url || null,
       ]
     );
 
-    const [rows] = await pool.query(
+    const [viewRows] = await pool.query(
       'SELECT * FROM video_views WHERE id = ? LIMIT 1',
-      [result.insertId]
+      [insertResult.insertId]
     );
 
     const [countRows] = await pool.query(
       `SELECT COUNT(*) AS total_views
        FROM video_views
        WHERE video_id = ?`,
-      [videoId]
+      [finalVideoId]
     );
 
     return res.status(201).json({
       message: 'Video view recorded successfully',
       total_views: Number(countRows[0]?.total_views || 0),
       views_count: Number(countRows[0]?.total_views || 0),
-      view: rows[0],
+      view: viewRows[0],
     });
   } catch (error) {
     return res.status(500).json({
@@ -277,33 +279,35 @@ async function recordPublicVideoView(req, res) {
 
 async function getRelatedVideos(req, res) {
   try {
-    const { videoId } = req.params;
+    const { videoId, id } = req.params;
+    const finalVideoId = videoId || id;
 
-    const [videos] = await pool.query(
+    const [videoRows] = await pool.query(
       'SELECT id, channel_id, category_id FROM videos WHERE id = ? LIMIT 1',
-      [videoId]
+      [finalVideoId]
     );
 
-    if (!videos.length) {
+    if (!videoRows.length) {
       return res.status(404).json({
         message: 'Video not found',
       });
     }
 
-    const currentVideo = videos[0];
+    const currentVideo = videoRows[0];
 
-    const [relatedRows] = await pool.query(
+    const [relatedVideos] = await pool.query(
       `SELECT
         v.id,
-        v.uuid,
-        v.channel_id,
         v.title,
         v.slug,
         v.thumbnail_key,
-        v.duration_seconds,
-        v.published_at,
+        v.created_at,
         c.channel_name,
-        c.channel_handle
+        (
+          SELECT COUNT(*)
+          FROM video_views vv
+          WHERE vv.video_id = v.id
+        ) AS views_count
        FROM videos v
        INNER JOIN channels c ON c.id = v.channel_id
        WHERE v.id != ?
@@ -313,18 +317,16 @@ async function getRelatedVideos(req, res) {
            v.channel_id = ?
            OR (v.category_id IS NOT NULL AND v.category_id = ?)
          )
-       ORDER BY v.id DESC
-       LIMIT 12`,
-      [videoId, currentVideo.channel_id, currentVideo.category_id]
+       ORDER BY v.created_at DESC
+       LIMIT 20`,
+      [finalVideoId, currentVideo.channel_id, currentVideo.category_id]
     );
 
-    const relatedWithUrls = relatedRows.map((item) => ({
-      ...item,
-      thumbnail_url: buildFileUrl(item.thumbnail_key),
-    }));
-
     return res.status(200).json({
-      related_videos: relatedWithUrls,
+      related_videos: relatedVideos.map((video) => ({
+        ...video,
+        thumbnail_url: buildFileUrl(video.thumbnail_key),
+      })),
     });
   } catch (error) {
     return res.status(500).json({

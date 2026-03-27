@@ -34,25 +34,62 @@ const adSkipRoutes = require('./routes/adSkipRoutes');
 
 const app = express();
 
-app.use((req, res, next) => {
-  const origin = req.headers.origin || '*';
-
-  res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(204);
-  }
-
-  next();
-});
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+  'http://localhost:5176',
+  'http://localhost:5177',
+  'http://localhost:5178',
+  'http://localhost:5179',
+  'http://localhost:5180',
+  'http://localhost:5181',
+  'http://localhost:5182',
+  'http://localhost:5183',
+  'http://localhost:5184',
+  'http://localhost:5185',
+  'http://localhost:5186',
+  'http://localhost:5187',
+  'http://localhost:5188',
+  'http://localhost:5189',
+  'http://localhost:5190',
+  'http://localhost:5191',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://127.0.0.1:5175',
+  'http://127.0.0.1:5176',
+  'http://127.0.0.1:5177',
+  'http://127.0.0.1:5178',
+  'http://127.0.0.1:5179',
+  'http://127.0.0.1:5180',
+  'http://127.0.0.1:5181',
+  'http://127.0.0.1:5182',
+  'http://127.0.0.1:5183',
+  'http://127.0.0.1:5184',
+  'http://127.0.0.1:5185',
+  'http://127.0.0.1:5186',
+  'http://127.0.0.1:5187',
+  'http://127.0.0.1:5188',
+  'http://127.0.0.1:5189',
+  'http://127.0.0.1:5190',
+  'http://127.0.0.1:5191',
+];
 
 app.use(cors({
-  origin: true,
+  origin(origin, callback) {
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 app.use(express.json());

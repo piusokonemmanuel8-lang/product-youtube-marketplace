@@ -29,8 +29,29 @@ function normalizeArrayResponse(data) {
   return [];
 }
 
+function formatViews(value) {
+  const views = Number(value || 0);
+
+  if (Number.isNaN(views)) {
+    return '0 views';
+  }
+
+  return `${views.toLocaleString()} views`;
+}
+
 function unwrapVideoItem(item) {
   const video = item?.video || item?.saved_video || item?.history_video || item?.item || item || {};
+
+  const resolvedViews =
+    video?.views_count ??
+    video?.views ??
+    video?.view_count ??
+    video?.total_views ??
+    item?.views_count ??
+    item?.views ??
+    item?.view_count ??
+    item?.total_views ??
+    0;
 
   return {
     ...item,
@@ -49,14 +70,9 @@ function unwrapVideoItem(item) {
     channel_name: video?.channel_name || item?.channel_name,
     creator_name: video?.creator_name || item?.creator_name,
     category_name: video?.category_name || item?.category_name,
-    views:
-      video?.views ??
-      video?.view_count ??
-      video?.total_views ??
-      item?.views ??
-      item?.view_count ??
-      item?.total_views ??
-      0,
+    views_count: Number(resolvedViews || 0),
+    views: Number(resolvedViews || 0),
+    total_views: Number(resolvedViews || 0),
   };
 }
 
@@ -81,9 +97,17 @@ function formatVideoMeta(video) {
     }
   }
 
+  const resolvedViews =
+    video?.views_count ??
+    video?.views ??
+    video?.view_count ??
+    video?.total_views ??
+    0;
+
   return {
     creator,
     meta: dateText,
+    viewsText: formatViews(resolvedViews),
   };
 }
 
@@ -230,8 +254,8 @@ function HomePage() {
 
   const trendingVideos = useMemo(() => {
     return [...featuredVideos].sort((a, b) => {
-      const aViews = Number(a?.views || a?.view_count || a?.total_views || 0);
-      const bViews = Number(b?.views || b?.view_count || b?.total_views || 0);
+      const aViews = Number(a?.views_count || a?.views || a?.view_count || a?.total_views || 0);
+      const bViews = Number(b?.views_count || b?.views || b?.view_count || b?.total_views || 0);
       return bViews - aViews;
     });
   }, [featuredVideos]);
@@ -455,6 +479,7 @@ function HomePage() {
                       <h3>{video?.title || 'Untitled Video'}</h3>
                       <div className="vg-creator-name">{details.creator}</div>
                       <div className="vg-meta-text">{details.meta}</div>
+                      <div className="vg-meta-text">{details.viewsText}</div>
 
                       <div className="vg-card-actions">
                         <span className="vg-card-btn">Watch</span>
