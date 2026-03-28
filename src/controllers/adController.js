@@ -25,6 +25,62 @@ async function createAdCampaign(req, res) {
     }
 
     const campaignUuid = crypto.randomUUID();
+    const creatorUserId = req.user?.id || null;
+
+    const [columns] = await pool.query(`SHOW COLUMNS FROM ad_campaigns`);
+    const columnNames = columns.map((column) => column.Field);
+    const hasCreatorUserId = columnNames.includes('creator_user_id');
+
+    if (hasCreatorUserId) {
+      const [result] = await pool.query(
+        `INSERT INTO ad_campaigns
+        (
+          uuid,
+          creator_user_id,
+          advertiser_name,
+          advertiser_email,
+          title,
+          destination_url,
+          budget,
+          cost_per_view,
+          cost_per_click,
+          max_impressions,
+          max_clicks,
+          skip_after_seconds,
+          status,
+          starts_at,
+          ends_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          campaignUuid,
+          creatorUserId,
+          advertiser_name.trim(),
+          advertiser_email || null,
+          title.trim(),
+          destination_url.trim(),
+          budget || 0,
+          cost_per_view || 0,
+          cost_per_click || 0,
+          max_impressions || 0,
+          max_clicks || 0,
+          skip_after_seconds || 3,
+          'draft',
+          starts_at || null,
+          ends_at || null,
+        ]
+      );
+
+      const [campaigns] = await pool.query(
+        'SELECT * FROM ad_campaigns WHERE id = ? LIMIT 1',
+        [result.insertId]
+      );
+
+      return res.status(201).json({
+        message: 'Ad campaign created successfully',
+        campaign: campaigns[0],
+      });
+    }
 
     const [result] = await pool.query(
       `INSERT INTO ad_campaigns
@@ -119,7 +175,48 @@ async function approveAdCampaign(req, res) {
   }
 }
 
+async function getAllAdCampaigns(req, res) {
+  try {
+    const [campaigns] = await pool.query(
+      `SELECT *
+       FROM ad_campaigns
+       ORDER BY id DESC`
+    );
+
+    return res.status(200).json({
+      campaigns,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to fetch ad campaigns',
+      error: error.message,
+    });
+  }
+}
+
+async function getPendingAdCampaigns(req, res) {
+  try {
+    const [campaigns] = await pool.query(
+      `SELECT *
+       FROM ad_campaigns
+       WHERE status IN ('draft', 'pending')
+       ORDER BY id DESC`
+    );
+
+    return res.status(200).json({
+      campaigns,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to fetch pending ad campaigns',
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   createAdCampaign,
   approveAdCampaign,
+  getAllAdCampaigns,
+  getPendingAdCampaigns,
 };

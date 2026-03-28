@@ -24,6 +24,10 @@ function formatCount(value) {
   return Number(value || 0).toLocaleString();
 }
 
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString();
+}
+
 function getCategoryName(category) {
   return (
     category?.name ||
@@ -36,6 +40,45 @@ function getCategoryName(category) {
 
 function getStatusClass(value) {
   return String(value || 'unknown').toLowerCase().replace(/\s+/g, '-');
+}
+
+function normalizeAdCampaign(campaign, index = 0) {
+  return {
+    id: campaign?.id || `campaign-${index}`,
+    uuid: campaign?.uuid || '',
+    advertiser_name: campaign?.advertiser_name || 'Unknown advertiser',
+    advertiser_email: campaign?.advertiser_email || '',
+    title: campaign?.title || 'Untitled campaign',
+    destination_url: campaign?.destination_url || '',
+    budget: Number(campaign?.budget || 0),
+    cost_per_view: Number(campaign?.cost_per_view || 0),
+    cost_per_click: Number(campaign?.cost_per_click || 0),
+    max_impressions: Number(campaign?.max_impressions || 0),
+    max_clicks: Number(campaign?.max_clicks || 0),
+    skip_after_seconds: Number(campaign?.skip_after_seconds || 0),
+    status: campaign?.status || 'draft',
+    starts_at: campaign?.starts_at || '',
+    ends_at: campaign?.ends_at || '',
+    created_at: campaign?.created_at || '',
+    raw: campaign,
+  };
+}
+
+function normalizeAdVideo(adVideo, index = 0) {
+  return {
+    id: adVideo?.id || `ad-video-${index}`,
+    campaign_id: adVideo?.campaign_id || '',
+    title: adVideo?.title || 'Untitled ad video',
+    video_key: adVideo?.video_key || '',
+    thumbnail_key: adVideo?.thumbnail_key || '',
+    duration_seconds: Number(adVideo?.duration_seconds || 0),
+    status: adVideo?.status || 'pending',
+    campaign_title: adVideo?.campaign_title || '',
+    advertiser_name: adVideo?.advertiser_name || '',
+    campaign_status: adVideo?.campaign_status || '',
+    created_at: adVideo?.created_at || '',
+    raw: adVideo,
+  };
 }
 
 function AdminDashboardPage() {
@@ -56,6 +99,10 @@ function AdminDashboardPage() {
   const [categories, setCategories] = useState([]);
   const [categoryTree, setCategoryTree] = useState([]);
   const [plans, setPlans] = useState([]);
+  const [adCampaigns, setAdCampaigns] = useState([]);
+  const [pendingAdCampaigns, setPendingAdCampaigns] = useState([]);
+  const [adVideos, setAdVideos] = useState([]);
+  const [pendingAdVideos, setPendingAdVideos] = useState([]);
 
   const [categoryForm, setCategoryForm] = useState({
     name: '',
@@ -129,6 +176,10 @@ function AdminDashboardPage() {
         categoriesData,
         treeData,
         plansData,
+        adCampaignsData,
+        pendingAdCampaignsData,
+        adVideosData,
+        pendingAdVideosData,
       ] = await Promise.all([
         adminService.getMe(),
         adminService.getVideos ? adminService.getVideos() : Promise.resolve([]),
@@ -138,6 +189,10 @@ function AdminDashboardPage() {
         adminService.getCategories ? adminService.getCategories() : Promise.resolve([]),
         adminService.getCategoryTree ? adminService.getCategoryTree() : Promise.resolve([]),
         adminService.getExternalPostingPlans ? adminService.getExternalPostingPlans() : Promise.resolve([]),
+        adminService.getAdCampaigns ? adminService.getAdCampaigns() : Promise.resolve([]),
+        adminService.getPendingAdCampaigns ? adminService.getPendingAdCampaigns() : Promise.resolve([]),
+        adminService.getAdVideos ? adminService.getAdVideos() : Promise.resolve([]),
+        adminService.getPendingAdVideos ? adminService.getPendingAdVideos() : Promise.resolve([]),
       ]);
 
       setMe(meData);
@@ -148,6 +203,26 @@ function AdminDashboardPage() {
       setCategories(Array.isArray(categoriesData) ? categoriesData : []);
       setCategoryTree(Array.isArray(treeData) ? treeData : []);
       setPlans(Array.isArray(plansData) ? plansData : []);
+      setAdCampaigns(
+        Array.isArray(adCampaignsData)
+          ? adCampaignsData.map((item, index) => normalizeAdCampaign(item, index))
+          : []
+      );
+      setPendingAdCampaigns(
+        Array.isArray(pendingAdCampaignsData)
+          ? pendingAdCampaignsData.map((item, index) => normalizeAdCampaign(item, index))
+          : []
+      );
+      setAdVideos(
+        Array.isArray(adVideosData)
+          ? adVideosData.map((item, index) => normalizeAdVideo(item, index))
+          : []
+      );
+      setPendingAdVideos(
+        Array.isArray(pendingAdVideosData)
+          ? pendingAdVideosData.map((item, index) => normalizeAdVideo(item, index))
+          : []
+      );
     } catch (err) {
       setError(err.message || 'Failed to load admin dashboard');
     } finally {
@@ -268,6 +343,39 @@ function AdminDashboardPage() {
     });
   }, [reports, searchTerm]);
 
+  const filteredAdCampaigns = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    const source = pendingAdCampaigns.length ? pendingAdCampaigns : adCampaigns;
+
+    if (!term) return source;
+
+    return source.filter((campaign) => {
+      return (
+        String(campaign?.title || '').toLowerCase().includes(term) ||
+        String(campaign?.advertiser_name || '').toLowerCase().includes(term) ||
+        String(campaign?.advertiser_email || '').toLowerCase().includes(term) ||
+        String(campaign?.status || '').toLowerCase().includes(term) ||
+        String(campaign?.destination_url || '').toLowerCase().includes(term)
+      );
+    });
+  }, [adCampaigns, pendingAdCampaigns, searchTerm]);
+
+  const filteredAdVideos = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    const source = pendingAdVideos.length ? pendingAdVideos : adVideos;
+
+    if (!term) return source;
+
+    return source.filter((adVideo) => {
+      return (
+        String(adVideo?.title || '').toLowerCase().includes(term) ||
+        String(adVideo?.campaign_title || '').toLowerCase().includes(term) ||
+        String(adVideo?.advertiser_name || '').toLowerCase().includes(term) ||
+        String(adVideo?.status || '').toLowerCase().includes(term)
+      );
+    });
+  }, [adVideos, pendingAdVideos, searchTerm]);
+
   const overviewCards = useMemo(() => {
     const pendingQueue = mergedPendingItems.length;
 
@@ -292,8 +400,25 @@ function AdminDashboardPage() {
       { label: 'Pending Reports', value: pendingReports },
       { label: 'Categories', value: categories.length },
       { label: 'External Plans', value: plans.length },
+      { label: 'Ad Campaigns', value: adCampaigns.length },
+      { label: 'Pending Ad Campaigns', value: pendingAdCampaigns.length || filteredAdCampaigns.length },
+      { label: 'Ad Videos', value: adVideos.length },
+      { label: 'Pending Ad Videos', value: pendingAdVideos.length || filteredAdVideos.length },
     ];
-  }, [videos, mergedPendingItems, channels, reports, categories, plans]);
+  }, [
+    videos,
+    mergedPendingItems,
+    channels,
+    reports,
+    categories,
+    plans,
+    adCampaigns,
+    pendingAdCampaigns,
+    adVideos,
+    pendingAdVideos,
+    filteredAdCampaigns.length,
+    filteredAdVideos.length,
+  ]);
 
   async function handleApproveVideo(video) {
     if (!adminService.updateAdminVideoStatus) {
@@ -617,20 +742,26 @@ function AdminDashboardPage() {
     }));
   }
 
-  async function handleApproveCampaign() {
-    if (!adTools.campaignId) {
+  async function handleApproveCampaign(campaignIdOverride = '') {
+    const campaignId = campaignIdOverride || adTools.campaignId;
+
+    if (!campaignId) {
       setError('Enter a campaign ID');
       return;
     }
 
-    const actionId = `approve-campaign-${adTools.campaignId}`;
+    const actionId = `approve-campaign-${campaignId}`;
     setActionLoadingId(actionId);
     setError('');
     setSuccessMessage('');
 
     try {
-      await adminService.approveAdCampaign(adTools.campaignId);
+      await adminService.approveAdCampaign(campaignId);
       setSuccessMessage('Ad campaign approved');
+      if (!campaignIdOverride) {
+        setAdTools((prev) => ({ ...prev, campaignId: campaignId }));
+      }
+      await loadAll();
     } catch (err) {
       setError(err.message || 'Campaign approval failed');
     } finally {
@@ -638,20 +769,26 @@ function AdminDashboardPage() {
     }
   }
 
-  async function handleApproveAdVideo() {
-    if (!adTools.adVideoId) {
+  async function handleApproveAdVideo(adVideoIdOverride = '') {
+    const adVideoId = adVideoIdOverride || adTools.adVideoId;
+
+    if (!adVideoId) {
       setError('Enter an ad video ID');
       return;
     }
 
-    const actionId = `approve-ad-video-${adTools.adVideoId}`;
+    const actionId = `approve-ad-video-${adVideoId}`;
     setActionLoadingId(actionId);
     setError('');
     setSuccessMessage('');
 
     try {
-      await adminService.approveAdVideo(adTools.adVideoId);
+      await adminService.approveAdVideo(adVideoId);
       setSuccessMessage('Ad video approved');
+      if (!adVideoIdOverride) {
+        setAdTools((prev) => ({ ...prev, adVideoId }));
+      }
+      await loadAll();
     } catch (err) {
       setError(err.message || 'Ad video approval failed');
     } finally {
@@ -714,8 +851,10 @@ function AdminDashboardPage() {
 - Reports moderation
 - Categories create, edit, delete
 - External posting plans list
-- Approve ad campaign by ID
-- Approve ad video by ID
+- Ad campaigns list + pending list
+- Ad videos list + pending list
+- Approve ad campaign
+- Approve ad video
 - Campaign stats lookup by ID`}
             </pre>
           </div>
@@ -1309,6 +1448,19 @@ function AdminDashboardPage() {
   function renderAds() {
     return (
       <div className="admin-section">
+        <div className="admin-toolbar">
+          <input
+            type="text"
+            className="admin-search"
+            placeholder="Search campaigns, advertiser, ad videos, status..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <button className="admin-btn secondary" onClick={loadAll}>
+            Refresh
+          </button>
+        </div>
+
         <div className="admin-panels-grid">
           <div className="admin-panel">
             <h3>Approve Ad Campaign</h3>
@@ -1323,7 +1475,7 @@ function AdminDashboardPage() {
               <button
                 className="admin-btn success"
                 disabled={actionLoadingId === `approve-campaign-${adTools.campaignId}`}
-                onClick={handleApproveCampaign}
+                onClick={() => handleApproveCampaign()}
               >
                 Approve Campaign
               </button>
@@ -1343,7 +1495,7 @@ function AdminDashboardPage() {
               <button
                 className="admin-btn success"
                 disabled={actionLoadingId === `approve-ad-video-${adTools.adVideoId}`}
-                onClick={handleApproveAdVideo}
+                onClick={() => handleApproveAdVideo()}
               >
                 Approve Ad Video
               </button>
@@ -1378,6 +1530,170 @@ function AdminDashboardPage() {
               {JSON.stringify(campaignStats || {}, null, 2)}
             </pre>
           </div>
+        </div>
+
+        <div className="admin-panel">
+          <h3>Ads Endpoint Scope</h3>
+          <pre className="admin-json-block">
+{`Creator side
+- POST /api/ads/campaigns
+- POST /api/ads/videos
+
+Admin side
+- GET /api/ads/campaigns
+- GET /api/ads/campaigns/pending
+- PUT /api/ads/campaigns/:id/approve
+- GET /api/ads/videos
+- GET /api/ads/videos/pending
+- PUT /api/ads/videos/:id/approve
+
+Performance
+- GET /api/ads/player
+- POST /api/ads/impressions
+- POST /api/ads/clicks
+- POST /api/ads/skips
+- GET /api/ads/campaigns/:id/stats`}
+          </pre>
+        </div>
+
+        <div className="admin-table-wrap" style={{ marginTop: 20 }}>
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Campaign ID</th>
+                <th>Advertiser</th>
+                <th>Title</th>
+                <th>Destination</th>
+                <th>Budget</th>
+                <th>Status</th>
+                <th>Dates</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAdCampaigns.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="admin-empty">No submitted ad campaigns found</td>
+                </tr>
+              ) : (
+                filteredAdCampaigns.map((campaign) => (
+                  <tr key={campaign.id}>
+                    <td>{campaign.id}</td>
+                    <td>
+                      <div className="admin-strong">{campaign.advertiser_name}</div>
+                      <div className="admin-subtext">{campaign.advertiser_email || '—'}</div>
+                    </td>
+                    <td>
+                      <div className="admin-strong">{campaign.title}</div>
+                      <div className="admin-subtext">{campaign.uuid || '—'}</div>
+                    </td>
+                    <td>{campaign.destination_url || '—'}</td>
+                    <td>₦{formatMoney(campaign.budget)}</td>
+                    <td>
+                      <span className={`admin-badge ${getStatusClass(campaign.status)}`}>
+                        {campaign.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="admin-subtext">Start: {formatDate(campaign.starts_at)}</div>
+                      <div className="admin-subtext">End: {formatDate(campaign.ends_at)}</div>
+                    </td>
+                    <td>
+                      <div className="admin-actions">
+                        <button
+                          className="admin-btn success"
+                          disabled={actionLoadingId === `approve-campaign-${campaign.id}`}
+                          onClick={() => handleApproveCampaign(campaign.id)}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="admin-btn secondary"
+                          onClick={() =>
+                            setAdTools((prev) => ({
+                              ...prev,
+                              campaignId: String(campaign.id),
+                              statsCampaignId: String(campaign.id),
+                            }))
+                          }
+                        >
+                          Use ID
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="admin-table-wrap" style={{ marginTop: 20 }}>
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Ad Video ID</th>
+                <th>Title</th>
+                <th>Campaign</th>
+                <th>Advertiser</th>
+                <th>Duration</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAdVideos.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="admin-empty">No submitted ad videos found</td>
+                </tr>
+              ) : (
+                filteredAdVideos.map((adVideo) => (
+                  <tr key={adVideo.id}>
+                    <td>{adVideo.id}</td>
+                    <td>
+                      <div className="admin-strong">{adVideo.title}</div>
+                      <div className="admin-subtext">{adVideo.video_key || 'No video key'}</div>
+                    </td>
+                    <td>
+                      <div className="admin-strong">{adVideo.campaign_title || `Campaign ${adVideo.campaign_id}`}</div>
+                      <div className="admin-subtext">Campaign ID: {adVideo.campaign_id || '—'}</div>
+                    </td>
+                    <td>{adVideo.advertiser_name || '—'}</td>
+                    <td>{formatCount(adVideo.duration_seconds)}s</td>
+                    <td>
+                      <span className={`admin-badge ${getStatusClass(adVideo.status)}`}>
+                        {adVideo.status}
+                      </span>
+                    </td>
+                    <td>{formatDate(adVideo.created_at)}</td>
+                    <td>
+                      <div className="admin-actions">
+                        <button
+                          className="admin-btn success"
+                          disabled={actionLoadingId === `approve-ad-video-${adVideo.id}`}
+                          onClick={() => handleApproveAdVideo(adVideo.id)}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="admin-btn secondary"
+                          onClick={() =>
+                            setAdTools((prev) => ({
+                              ...prev,
+                              adVideoId: String(adVideo.id),
+                            }))
+                          }
+                        >
+                          Use ID
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     );

@@ -65,6 +65,57 @@ async function createAdVideo(req, res) {
   }
 }
 
+async function getAllAdVideos(req, res) {
+  try {
+    const [adVideos] = await pool.query(
+      `SELECT
+        av.*,
+        ac.title AS campaign_title,
+        ac.advertiser_name,
+        ac.status AS campaign_status
+       FROM ad_videos av
+       LEFT JOIN ad_campaigns ac ON ac.id = av.campaign_id
+       ORDER BY av.id DESC`
+    );
+
+    return res.status(200).json({
+      ad_videos: adVideos,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to fetch ad videos',
+      error: error.message,
+    });
+  }
+}
+
+async function getPendingAdVideos(req, res) {
+  try {
+    const [adVideos] = await pool.query(
+      `SELECT
+        av.*,
+        ac.title AS campaign_title,
+        ac.advertiser_name,
+        ac.status AS campaign_status
+       FROM ad_videos av
+       LEFT JOIN ad_campaigns ac ON ac.id = av.campaign_id
+       WHERE av.status IN ('pending', 'draft')
+       ORDER BY av.id DESC`
+    );
+
+    return res.status(200).json({
+      ad_videos: adVideos,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to fetch pending ad videos',
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   createAdVideo,
+  getAllAdVideos,
+  getPendingAdVideos,
 };

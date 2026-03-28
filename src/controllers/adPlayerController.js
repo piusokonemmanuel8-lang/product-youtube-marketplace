@@ -1,5 +1,16 @@
 const pool = require('../config/db');
 
+function buildMediaUrl(req, fileKey) {
+  if (!fileKey) return null;
+
+  if (/^https?:\/\//i.test(fileKey)) {
+    return fileKey;
+  }
+
+  const cleanKey = String(fileKey).replace(/^\/+/, '');
+  return `${req.protocol}://${req.get('host')}/uploads/${cleanKey}`;
+}
+
 async function getAdForVideo(req, res) {
   try {
     const { video_id, break_type, session_id } = req.query;
@@ -96,8 +107,14 @@ async function getAdForVideo(req, res) {
       });
     }
 
+    const ad = ads[0];
+
     return res.status(200).json({
-      ad: ads[0],
+      ad: {
+        ...ad,
+        video_key: buildMediaUrl(req, ad.video_key),
+        thumbnail_key: buildMediaUrl(req, ad.thumbnail_key),
+      },
       viewer_video_id: video_id || null,
       ad_break_type: finalBreakType,
       allowed_breaks: allowedBreaks,

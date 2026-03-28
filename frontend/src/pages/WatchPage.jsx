@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import api from '../services/api';
 import {
   addVideoComment,
   addVideoReaction,
@@ -132,6 +133,22 @@ function getCommentName(comment) {
   );
 }
 
+function getOrCreateAdSessionId() {
+  try {
+    const existing = sessionStorage.getItem('videogad_ad_session_id');
+    if (existing) return existing;
+
+    const generated =
+      window.crypto?.randomUUID?.() ||
+      `session_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+    sessionStorage.setItem('videogad_ad_session_id', generated);
+    return generated;
+  } catch (error) {
+    return `session_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
 function WatchPage() {
   const [slug, setSlug] = useState(getSlugFromUrl());
   const [watchData, setWatchData] = useState(null);
@@ -154,7 +171,17 @@ function WatchPage() {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [channelSubscriptionData, setChannelSubscriptionData] = useState(null);
 
+  const [adData, setAdData] = useState(null);
+  const [showPrerollAd, setShowPrerollAd] = useState(false);
+  const [adCountdown, setAdCountdown] = useState(3);
+  const [skipReady, setSkipReady] = useState(false);
+  const [adLoading, setAdLoading] = useState(false);
+
   const videoRef = useRef(null);
+  const adVideoRef = useRef(null);
+  const adCountdownIntervalRef = useRef(null);
+  const adEndedRef = useRef(false);
+  const adImpressionTrackedRef = useRef(false);
 
   useEffect(() => {
     const syncSlug = () => setSlug(getSlugFromUrl());
@@ -208,6 +235,14 @@ function WatchPage() {
   }, [channel]);
 
   useEffect(() => {
+    return () => {
+      if (adCountdownIntervalRef.current) {
+        clearInterval(adCountdownIntervalRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     async function loadWatchPage() {
       if (!slug) {
         setLoading(false);
@@ -218,6 +253,16 @@ function WatchPage() {
       setLoading(true);
       setErrorMessage('');
       setPageMessage('');
+      setAdData(null);
+      setShowPrerollAd(false);
+      setSkipReady(false);
+      setAdCountdown(3);
+      adEndedRef.current = false;
+      adImpressionTrackedRef.current = false;
+
+      if (adCountdownIntervalRef.current) {
+        clearInterval(adCountdownIntervalRef.current);
+      }
 
       try {
         const watchResponse = await getWatchPageBySlug(slug);
@@ -316,6 +361,43 @@ function WatchPage() {
           watchResponse?.saved_video === true;
 
         setIsSaved(savedFlag);
+
+        try {
+          setAdLoading(true);
+
+          const sessionId = getOrCreateAdSessionId();
+          const adResponse = await api.request(
+            `/ads/player?video_id=${encodeURIComponent(
+              resolvedVideoId
+            )}&break_type=pre-roll&session_id=${encodeURIComponent(sessionId)}`
+          );
+
+          const fetchedAd = adResponse?.ad || null;
+          const skipAfterSeconds = Math.max(
+            Number(fetchedAd?.skip_after_seconds || 3),
+            3
+          );
+
+          if (fetchedAd?.ad_video_id && fetchedAd?.video_key) {
+            setAdData({
+              ...fetchedAd,
+              skip_after_seconds: skipAfterSeconds,
+              viewer_video_id: resolvedVideoId,
+              session_id: sessionId,
+            });
+            setAdCountdown(skipAfterSeconds);
+            setSkipReady(false);
+            setShowPrerollAd(true);
+          } else {
+            setAdData(null);
+            setShowPrerollAd(false);
+          }
+        } catch (adError) {
+          setAdData(null);
+          setShowPrerollAd(false);
+        } finally {
+          setAdLoading(false);
+        }
       } catch (error) {
         setWatchData(null);
         setRelatedVideos([]);
@@ -326,6 +408,8 @@ function WatchPage() {
         setChannelSubscriptionData(null);
         setIsSubscribed(false);
         setIsSaved(false);
+        setAdData(null);
+        setShowPrerollAd(false);
         setErrorMessage(error.message || 'Failed to load watch page');
       } finally {
         setLoading(false);
@@ -336,7 +420,54 @@ function WatchPage() {
   }, [slug]);
 
   useEffect(() => {
-    if (!videoRef.current || !video?.video_url) return;
+    if (!showPrerollAd || !adData?.ad_video_id) {
+      if (adCountdownIntervalRef.current) {
+        clearInterval(adCountdownIntervalRef.current);
+      }
+      return;
+    }
+
+    if (!adImpressionTrackedRef.current) {
+      adImpressionTrackedRef.current = true;
+
+      api
+        .request('/ads/impressions', {
+          method: 'POST',
+          body: {
+            campaign_id: adData.campaign_id,
+            ad_video_id: adData.ad_video_id,
+            video_id: adData.viewer_video_id,
+            break_type: 'pre-roll',
+            session_id: adData.session_id,
+          },
+        })
+        .catch(() => null);
+    }
+
+    setSkipReady(false);
+    setAdCountdown(Math.max(Number(adData.skip_after_seconds || 3), 3));
+
+    adCountdownIntervalRef.current = setInterval(() => {
+      setAdCountdown((current) => {
+        if (current <= 1) {
+          clearInterval(adCountdownIntervalRef.current);
+          setSkipReady(true);
+          return 0;
+        }
+
+        return current - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (adCountdownIntervalRef.current) {
+        clearInterval(adCountdownIntervalRef.current);
+      }
+    };
+  }, [showPrerollAd, adData]);
+
+  useEffect(() => {
+    if (!videoRef.current || !video?.video_url || showPrerollAd) return;
 
     const playVideo = async () => {
       try {
@@ -346,7 +477,78 @@ function WatchPage() {
     };
 
     playVideo();
-  }, [watchData, video?.video_url]);
+  }, [watchData, video?.video_url, showPrerollAd]);
+
+  useEffect(() => {
+    if (!adVideoRef.current || !showPrerollAd || !adData?.video_key) return;
+
+    const playAdVideo = async () => {
+      try {
+        adVideoRef.current.muted = false;
+        await adVideoRef.current.play();
+      } catch (error) {
+        try {
+          adVideoRef.current.muted = true;
+          await adVideoRef.current.play();
+        } catch (nestedError) {}
+      }
+    };
+
+    playAdVideo();
+  }, [showPrerollAd, adData]);
+
+  function finishAdPlayback() {
+    if (adEndedRef.current) return;
+    adEndedRef.current = true;
+
+    if (adCountdownIntervalRef.current) {
+      clearInterval(adCountdownIntervalRef.current);
+    }
+
+    setShowPrerollAd(false);
+    setSkipReady(false);
+    setAdCountdown(0);
+  }
+
+  async function handleSkipAd() {
+    if (!adData?.ad_video_id) {
+      finishAdPlayback();
+      return;
+    }
+
+    try {
+      await api.request('/ads/skips', {
+        method: 'POST',
+        body: {
+          campaign_id: adData.campaign_id,
+          ad_video_id: adData.ad_video_id,
+          video_id: adData.viewer_video_id,
+          session_id: adData.session_id,
+        },
+      });
+    } catch (error) {}
+
+    finishAdPlayback();
+  }
+
+  async function handleAdClick() {
+    if (!adData?.ad_video_id || !adData?.destination_url) return;
+
+    try {
+      await api.request('/ads/clicks', {
+        method: 'POST',
+        body: {
+          campaign_id: adData.campaign_id,
+          ad_video_id: adData.ad_video_id,
+          video_id: adData.viewer_video_id,
+          session_id: adData.session_id,
+          destination_url: adData.destination_url,
+        },
+      });
+    } catch (error) {}
+
+    window.open(adData.destination_url, '_blank', 'noopener,noreferrer');
+  }
 
   async function handleReact(type) {
     if (!videoId) return;
@@ -585,8 +787,131 @@ function WatchPage() {
     <div className="watch-page">
       <div className="watch-layout">
         <main className="watch-main">
-          <div className="watch-player">
-            {video?.video_url ? (
+          <div className="watch-player" style={{ position: 'relative' }}>
+            {showPrerollAd && adData?.video_key ? (
+              <div
+                style={{
+                  position: 'relative',
+                  width: '100%',
+                  background: '#000',
+                  borderRadius: 16,
+                  overflow: 'hidden',
+                }}
+              >
+                <video
+                  ref={adVideoRef}
+                  className="watch-real-video"
+                  controls
+                  autoPlay
+                  playsInline
+                  src={adData.video_key}
+                  poster={adData.thumbnail_key || ''}
+                  onEnded={finishAdPlayback}
+                />
+
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 14,
+                    left: 14,
+                    background: 'rgba(0,0,0,0.72)',
+                    color: '#fff',
+                    padding: '8px 12px',
+                    borderRadius: 999,
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  Sponsored Ad
+                </div>
+
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 14,
+                    right: 14,
+                    display: 'flex',
+                    gap: 10,
+                    alignItems: 'center',
+                  }}
+                >
+                  {!skipReady ? (
+                    <div
+                      style={{
+                        background: 'rgba(0,0,0,0.72)',
+                        color: '#fff',
+                        padding: '8px 12px',
+                        borderRadius: 999,
+                        fontSize: 13,
+                        fontWeight: 600,
+                      }}
+                    >
+                      Skip in {adCountdown}s
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleSkipAd}
+                      style={{
+                        background: '#fff',
+                        color: '#111',
+                        border: 'none',
+                        padding: '10px 14px',
+                        borderRadius: 999,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Skip Ad
+                    </button>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 14,
+                    bottom: 14,
+                    display: 'flex',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  {adData?.campaign_title ? (
+                    <div
+                      style={{
+                        background: 'rgba(0,0,0,0.72)',
+                        color: '#fff',
+                        padding: '8px 12px',
+                        borderRadius: 999,
+                        fontSize: 13,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {adData.campaign_title}
+                    </div>
+                  ) : null}
+
+                  {adData?.destination_url ? (
+                    <button
+                      type="button"
+                      onClick={handleAdClick}
+                      style={{
+                        background: '#ff2d55',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '10px 14px',
+                        borderRadius: 999,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Visit Advertiser
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : video?.video_url ? (
               <video
                 ref={videoRef}
                 className="watch-real-video"
@@ -598,7 +923,9 @@ function WatchPage() {
                 poster={video?.thumbnail_url || ''}
               />
             ) : (
-              <div className="watch-player-screen">Video Player Placeholder</div>
+              <div className="watch-player-screen">
+                {adLoading ? 'Loading ad...' : 'Video Player Placeholder'}
+              </div>
             )}
           </div>
 

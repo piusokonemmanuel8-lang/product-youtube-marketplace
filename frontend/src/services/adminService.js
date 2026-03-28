@@ -111,6 +111,10 @@ function normalizeArrayPayload(payload) {
   if (Array.isArray(payload?.queue)) return payload.queue;
   if (Array.isArray(payload?.plans)) return payload.plans;
   if (Array.isArray(payload?.channels)) return payload.channels;
+  if (Array.isArray(payload?.campaigns)) return payload.campaigns;
+  if (Array.isArray(payload?.ad_campaigns)) return payload.ad_campaigns;
+  if (Array.isArray(payload?.ad_videos)) return payload.ad_videos;
+  if (Array.isArray(payload?.ads)) return payload.ads;
   return [];
 }
 
@@ -410,6 +414,26 @@ const adminService = {
     return normalizeArrayPayload(payload);
   },
 
+  async getAdCampaigns() {
+    const payload = await safeRequest('/api/ads/campaigns', { method: 'GET' }, []);
+    return normalizeArrayPayload(payload);
+  },
+
+  async getPendingAdCampaigns() {
+    const payload = await safeRequest('/api/ads/campaigns/pending', { method: 'GET' }, []);
+    return normalizeArrayPayload(payload);
+  },
+
+  async getAdVideos() {
+    const payload = await safeRequest('/api/ads/videos', { method: 'GET' }, []);
+    return normalizeArrayPayload(payload);
+  },
+
+  async getPendingAdVideos() {
+    const payload = await safeRequest('/api/ads/videos/pending', { method: 'GET' }, []);
+    return normalizeArrayPayload(payload);
+  },
+
   async approveAdCampaign(campaignId) {
     return await request(`/api/ads/campaigns/${campaignId}/approve`, {
       method: 'PUT',
@@ -427,6 +451,34 @@ const adminService = {
   async getCampaignStats(campaignId) {
     return await request(`/api/ads/campaigns/${campaignId}/stats`, {
       method: 'GET',
+    });
+  },
+
+  async getAdPlayer(videoId = '') {
+    const query = videoId ? `?videoId=${encodeURIComponent(videoId)}` : '';
+    return await request(`/api/ads/player${query}`, {
+      method: 'GET',
+    });
+  },
+
+  async trackAdImpression(payload) {
+    return await request('/api/ads/impressions', {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+  },
+
+  async trackAdClick(payload) {
+    return await request('/api/ads/clicks', {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+  },
+
+  async trackAdSkip(payload) {
+    return await request('/api/ads/skips', {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
     });
   },
 };
