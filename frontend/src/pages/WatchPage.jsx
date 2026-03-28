@@ -10,6 +10,7 @@ import {
   getVideoReactions,
   getVideoTags,
   getWatchPageBySlug,
+  recordProductClick,
   removeVideoReaction,
   saveVideo,
   shareVideo,
@@ -145,6 +146,7 @@ function WatchPage() {
   const [reactionAction, setReactionAction] = useState(false);
   const [commentLoading, setCommentLoading] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
+  const [buyNowLoading, setBuyNowLoading] = useState(false);
 
   const videoRef = useRef(null);
 
@@ -257,7 +259,7 @@ function WatchPage() {
           viewResponse?.total_views ??
           viewResponse?.views_count ??
           viewResponse?.views ??
-          (Number(oldViewCount) + 1);
+          Number(oldViewCount) + 1;
 
         setWatchData({
           ...watchResponse,
@@ -422,6 +424,33 @@ function WatchPage() {
     }
   }
 
+  async function handleBuyNowClick(event) {
+    event.preventDefault();
+
+    const destinationUrl = video?.buy_link || video?.buy_now_url || '';
+
+    if (!videoId || !destinationUrl || destinationUrl === '#') {
+      setErrorMessage('Buy now link is not available.');
+      return;
+    }
+
+    setBuyNowLoading(true);
+    setPageMessage('');
+    setErrorMessage('');
+
+    try {
+      await recordProductClick(videoId, {
+        destination_url: destinationUrl,
+      });
+    } catch (error) {
+      // do not block opening external link
+    } finally {
+      setBuyNowLoading(false);
+    }
+
+    window.open(destinationUrl, '_blank', 'noopener,noreferrer');
+  }
+
   async function handleCommentSubmit(event) {
     event.preventDefault();
     if (!videoId || !commentText.trim()) return;
@@ -574,8 +603,10 @@ function WatchPage() {
                   href={video?.buy_link || video?.buy_now_url || '#'}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={handleBuyNowClick}
+                  aria-disabled={buyNowLoading}
                 >
-                  Buy Now
+                  {buyNowLoading ? 'Opening...' : 'Buy Now'}
                 </a>
               </div>
             </div>

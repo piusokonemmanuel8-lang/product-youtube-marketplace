@@ -3,9 +3,9 @@
 ========================= */
 
 .home-layout {
-  min-height: 100vh;
+  height: 100vh;
   transition: background 0.25s ease, color 0.25s ease;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 .home-layout-light {
@@ -33,6 +33,7 @@
   top: 0;
   z-index: 20;
   backdrop-filter: blur(10px);
+  flex-shrink: 0;
 }
 
 .home-layout-light .vg-topbar {
@@ -179,8 +180,9 @@
 
 .vg-main-shell {
   display: flex;
-  min-height: calc(100vh - 86px);
+  height: calc(100vh - 86px);
   min-width: 0;
+  overflow: hidden;
 }
 
 .vg-sidebar {
@@ -190,6 +192,11 @@
   flex-direction: column;
   gap: 8px;
   flex-shrink: 0;
+  position: sticky;
+  top: 86px;
+  align-self: flex-start;
+  height: calc(100vh - 86px);
+  overflow: hidden;
 }
 
 .home-layout-light .vg-sidebar {
@@ -237,7 +244,9 @@
   flex: 1;
   padding: 24px;
   min-width: 0;
+  overflow-y: auto;
   overflow-x: hidden;
+  height: calc(100vh - 86px);
 }
 
 .home-state-message {
@@ -568,7 +577,7 @@
 }
 
 .vg-video-thumb {
-  height: 190px;
+  height: 205px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -786,6 +795,13 @@
   justify-content: center;
 }
 
+.vg-video-thumb.has-image {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: transparent;
+}
+
 @media (max-width: 1100px) {
   .vg-video-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -807,6 +823,11 @@
 }
 
 @media (max-width: 760px) {
+  .home-layout {
+    height: auto;
+    overflow: visible;
+  }
+
   .vg-topbar {
     flex-wrap: wrap;
     min-height: auto;
@@ -828,12 +849,19 @@
     justify-content: flex-start;
   }
 
+  .vg-main-shell {
+    height: auto;
+    overflow: visible;
+  }
+
   .vg-sidebar {
     display: none;
   }
 
   .vg-content {
     padding: 16px;
+    height: auto;
+    overflow: visible;
   }
 
   .vg-video-grid {
@@ -890,10 +918,4 @@
   .vg-short-thumb {
     height: 220px;
   }
-}
-.vg-video-thumb.has-image {
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  color: transparent;
 }

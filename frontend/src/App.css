@@ -667,6 +667,37 @@ select {
   color: #ffffff;
 }
 
+.creator-channel-box,
+.creator-sidebar-auth-box {
+  background: #171c29;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  padding: 14px;
+  margin-top: 8px;
+}
+
+.creator-channel-label {
+  margin: 0 0 8px;
+  color: #8f99b0;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.creator-channel-box h4,
+.creator-sidebar-auth-box h4 {
+  margin: 0 0 6px;
+  color: #ffffff;
+}
+
+.creator-channel-box span,
+.creator-channel-box small,
+.creator-sidebar-auth-box span {
+  display: block;
+  color: #b6bed1;
+  line-height: 1.45;
+}
+
 .videogad-dashboard-main {
   padding: 28px;
 }
@@ -700,6 +731,29 @@ select {
   flex-wrap: wrap;
 }
 
+.primary-btn,
+.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  border-radius: 16px;
+  padding: 14px 20px;
+  font-weight: 700;
+  transition: 0.2s ease;
+}
+
+.primary-btn {
+  background: #ff4f88;
+  color: #ffffff;
+}
+
+.ghost-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
 .videogad-close-menu,
 .videogad-menu-toggle {
   border: none;
@@ -728,7 +782,7 @@ select {
 
 .videogad-stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -760,7 +814,7 @@ select {
 }
 
 .videogad-dashboard-content-grid.lower {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1.08fr 1fr;
 }
 
 .videogad-panel.large {
@@ -785,6 +839,14 @@ select {
 .text-link {
   color: #ff7a9d;
   text-decoration: none;
+}
+
+.analytics-mini-select {
+  background: #111521;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
 }
 
 .videogad-video-table {
@@ -819,6 +881,9 @@ select {
   justify-content: center;
   color: #9ca8c7;
   font-size: 0.85rem;
+  object-fit: cover;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .video-main h4 {
@@ -895,22 +960,88 @@ select {
   padding: 18px;
 }
 
-.fake-bars {
-  height: 180px;
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  margin-bottom: 14px;
+.mini-chart-box.modern {
+  padding: 14px 14px 18px;
 }
 
-.fake-bars span {
-  flex: 1;
-  border-radius: 12px 12px 4px 4px;
+.mini-chart-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+}
+
+.mini-chart-bars-30 {
+  min-width: 840px;
+  height: 220px;
+  display: grid;
+  grid-template-columns: repeat(30, minmax(18px, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.mini-chart-day {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.mini-chart-bar {
+  width: 100%;
+  min-height: 8px;
+  border-radius: 10px 10px 4px 4px;
   background: linear-gradient(180deg, #ff4f88, #7c5cff);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.mini-chart-day:hover .mini-chart-bar {
+  transform: translateY(-2px);
+  opacity: 0.95;
+}
+
+.mini-chart-day small {
+  color: #8f99b0;
+  font-size: 0.68rem;
+  min-height: 12px;
+  text-align: center;
+}
+
+.mini-chart-tooltip {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0d1220;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 8px 10px;
+  min-width: 92px;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: 0.2s ease;
+  z-index: 5;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+}
+
+.mini-chart-tooltip-date {
+  display: block;
+  color: #aeb7ca;
+  font-size: 0.72rem;
+  margin-bottom: 4px;
+}
+
+.mini-chart-day:hover .mini-chart-tooltip {
+  opacity: 1;
 }
 
 .mini-chart-box p {
-  margin: 0;
+  margin: 10px 0 0;
   color: #aeb7ca;
 }
 
@@ -936,8 +1067,15 @@ select {
   color: #ffd45a;
 }
 
+.dashboard-empty-box {
+  background: #111521;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  color: #b6bed1;
+  padding: 18px;
+  border-radius: 18px;
+}
+
 @media (max-width: 1100px) {
-  .videogad-stats-grid,
   .videogad-dashboard-content-grid,
   .videogad-dashboard-content-grid.lower {
     grid-template-columns: 1fr 1fr;
@@ -1017,7 +1155,13 @@ select {
   .video-meta {
     width: 100%;
   }
-}/* =========================
+
+  .mini-chart-bars-30 {
+    min-width: 720px;
+  }
+}
+
+/* =========================
    CREATOR DASHBOARD EXTRA CSS
 ========================= */
 

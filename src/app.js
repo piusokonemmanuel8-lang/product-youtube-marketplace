@@ -32,6 +32,10 @@ const adClickRoutes = require('./routes/adClickRoutes');
 const adReportRoutes = require('./routes/adReportRoutes');
 const adSkipRoutes = require('./routes/adSkipRoutes');
 
+const { protect, protectOptional } = require('./middleware/authMiddleware');
+const { recordProductClick } = require('./controllers/productClickController');
+const { getCreatorDashboardSummary } = require('./controllers/creatorDashboardController');
+
 const app = express();
 
 const allowedOrigins = [
@@ -75,22 +79,24 @@ const allowedOrigins = [
   'http://127.0.0.1:5191',
 ];
 
-app.use(cors({
-  origin(origin, callback) {
-    if (!origin) {
-      return callback(null, true);
-    }
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) {
+        return callback(null, true);
+      }
 
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
 
-    return callback(new Error(`CORS blocked for origin: ${origin}`));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 
 app.use(express.json());
 
@@ -112,10 +118,26 @@ app.get('/api/channels-test', (req, res) => {
   });
 });
 
+/*
+  Keep this small test route if you want.
+*/
+app.get('/api/product-click-test', (req, res) => {
+  res.json({
+    message: 'APP direct product click test works',
+  });
+});
+
+/*
+  REAL LIVE ROUTES
+*/
+app.post('/api/videos/:videoId/product-click', protectOptional, recordProductClick);
+app.get('/api/creator/dashboard-summary', protect, getCreatorDashboardSummary);
+
 app.use('/api/auth', authRoutes);
 app.use('/api/channels', channelRoutes);
 app.use('/api/creator', creatorProfileRoutes);
 app.use('/api/videos', videoRoutes);
+
 app.use('/api', videoReactionRoutes);
 app.use('/api', commentRoutes);
 app.use('/api', channelSubscriptionRoutes);
@@ -132,6 +154,7 @@ app.use('/api', viewerProfileRoutes);
 app.use('/api', publicWatchRoutes);
 app.use('/api', marketplaceAuthRoutes);
 app.use('/api', categoryRoutes);
+
 app.use('/api/ads', adRoutes);
 app.use('/api/ads', adVideoRoutes);
 app.use('/api/ads', adPlayerRoutes);

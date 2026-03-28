@@ -1,16 +1,20 @@
-import api from "./api";
+import { apiRequest } from './api';
 
 export const getCreatorProfile = async () => {
-  const res = await api.get("/creator/profile");
-  return res.data;
+  return apiRequest('/creator/profile', {
+    method: 'GET',
+  });
 };
 
 export const createCreatorProfile = async (payload) => {
-  const res = await api.post("/creator/profile", payload);
-  return res.data;
+  return apiRequest('/creator/profile', {
+    method: 'POST',
+    body: payload,
+  });
 };
 
 export const getMyChannel = async () => {
-  const res = await api.get("/channels/me");
-  return res.data;
+  return apiRequest('/channels/me', {
+    method: 'GET',
+  });
 };

@@ -99,3 +99,10 @@ export async function getVideoTags(videoId) {
     method: 'GET',
   });
 }
+
+export async function recordProductClick(videoId, payload = {}) {
+  return apiRequest(`/api/videos/${videoId}/product-click`, {
+    method: 'POST',
+    body: payload,
+  });
+}

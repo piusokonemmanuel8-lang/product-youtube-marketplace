@@ -1,74 +1,243 @@
-import React, { useEffect, useState } from 'react';
-import { getMyChannel } from '../services/createChannelService';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  getCreatorAnalyticsOverview,
+  getCreatorDashboardSummary,
+  getCurrentExternalPostingSubscription,
+  getMarketplaceAuthStatus,
+  getMyChannel,
+} from '../services/creatorDashboardService';
 
-const stats = [
-  { label: 'Total Videos', value: '24', sub: '+3 this week' },
-  { label: 'Total Views', value: '18.4K', sub: '+1.2K this week' },
-  { label: 'Subscribers', value: '2,148', sub: '+86 this month' },
-  { label: 'Products Clicks', value: '942', sub: '+74 this week' },
-];
+function getObject(data, key = null) {
+  if (!data) return null;
+  if (key && data?.[key] && typeof data[key] === 'object') return data[key];
+  if (data?.data && typeof data.data === 'object' && !Array.isArray(data.data)) return data.data;
+  return data;
+}
 
-const recentVideos = [
-  {
-    id: 1,
-    title: 'Best Wireless Earbuds Under $50',
-    status: 'Published',
-    views: '3.4K',
-    comments: 42,
-    date: '2 days ago',
-  },
-  {
-    id: 2,
-    title: 'Top 5 Budget Smart Watches',
-    status: 'Pending Review',
-    views: '1.1K',
-    comments: 13,
-    date: '5 days ago',
-  },
-  {
-    id: 3,
-    title: 'Amazon Finds You Will Actually Use',
-    status: 'Draft',
-    views: '—',
-    comments: 0,
-    date: 'Not published',
-  },
-];
+function getValue(obj, keys = [], fallback = 0) {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+  return fallback;
+}
 
-const quickActions = [
-  { title: 'Upload Video', desc: 'Add a new product video for viewers to watch and buy.' },
-  { title: 'Create Channel', desc: 'Set up your creator identity and storefront presence.' },
-  { title: 'My Videos', desc: 'Manage uploaded videos, edit details, and track status.' },
-  { title: 'Marketplace Auth', desc: 'Verify your Supgad store or manage external link access.' },
-];
+function formatCompactNumber(value) {
+  const number = Number(value || 0);
+
+  if (!Number.isFinite(number)) return String(value || 0);
+
+  if (number >= 1000000) {
+    return `${(number / 1000000).toFixed(number >= 10000000 ? 0 : 1)}M`;
+  }
+
+  if (number >= 1000) {
+    return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}K`;
+  }
+
+  return number.toLocaleString();
+}
+
+function formatDateLabel(value) {
+  if (!value) return 'Recently added';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  const now = new Date();
+  const diffMs = now - date;
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffDays <= 0) return 'Today';
+  if (diffDays === 1) return '1 day ago';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) {
+    const weeks = Math.floor(diffDays / 7);
+    return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
+  }
+
+  return date.toLocaleDateString();
+}
+
+function formatShortDay(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function normalizeStatus(value) {
+  const raw = String(value || '').trim().toLowerCase();
+
+  if (!raw) return 'Draft';
+  if (raw.includes('publish')) return 'Published';
+  if (raw.includes('pending')) return 'Pending Review';
+  if (raw.includes('review')) return 'Pending Review';
+  if (raw.includes('reject')) return 'Rejected';
+  if (raw.includes('draft')) return 'Draft';
+
+  return String(value)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getStatusClass(status) {
+  return normalizeStatus(status).toLowerCase().replace(/\s+/g, '-');
+}
+
+function secondsToShortText(seconds) {
+  const total = Number(seconds || 0);
+  if (!Number.isFinite(total) || total <= 0) return '30 day activity trend';
+
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+
+  if (hours > 0) return `${hours}h ${minutes}m watch time`;
+  return `${minutes}m watch time`;
+}
 
 function CreatorDashboardPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [channel, setChannel] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [latestVideos, setLatestVideos] = useState([]);
+  const [trend30Days, setTrend30Days] = useState([]);
+  const [selectedMetric, setSelectedMetric] = useState('views_count');
+  const [analyticsOverview, setAnalyticsOverview] = useState(null);
+  const [marketplaceAuth, setMarketplaceAuth] = useState(null);
+  const [externalPosting, setExternalPosting] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadMyChannel() {
-      try {
-        const response = await getMyChannel();
-        const channelData = response?.channel || response?.data || response;
+    async function loadDashboard() {
+      setLoading(true);
 
-        if (channelData && (channelData.id || channelData.channel_name || channelData.name)) {
-          setChannel(channelData);
-        } else {
-          setChannel(null);
-        }
-      } catch (error) {
-        setChannel(null);
-      }
+      const [
+        dashboardResponse,
+        analyticsResponse,
+        channelResponse,
+        marketplaceResponse,
+        externalPostingResponse,
+      ] = await Promise.all([
+        getCreatorDashboardSummary().catch(() => null),
+        getCreatorAnalyticsOverview().catch(() => null),
+        getMyChannel().catch(() => null),
+        getMarketplaceAuthStatus().catch(() => null),
+        getCurrentExternalPostingSubscription().catch(() => null),
+      ]);
+
+      const dashboardData = getObject(dashboardResponse);
+      const analyticsData = getObject(analyticsResponse);
+      const channelData =
+        getObject(channelResponse, 'channel') ||
+        getObject(channelResponse);
+
+      setSummary(dashboardData?.summary || null);
+      setLatestVideos(dashboardData?.latest_videos || []);
+      setTrend30Days(dashboardData?.trend_30_days || []);
+      setAnalyticsOverview(analyticsData || null);
+      setChannel(channelData || null);
+      setMarketplaceAuth(getObject(marketplaceResponse));
+      setExternalPosting(getObject(externalPostingResponse));
+
+      setLoading(false);
     }
 
-    loadMyChannel();
+    loadDashboard();
   }, []);
 
-  const channelName = channel?.channel_name || channel?.name || '';
-  const channelHandle = channel?.channel_handle || channel?.handle || '';
-  const channelSlug = channel?.channel_slug || channel?.slug || '';
-  const hasChannel = !!channel;
+  const channelName = getValue(channel, ['channel_name', 'name', 'title'], 'Creator');
+  const channelHandle = getValue(channel, ['channel_handle', 'handle', 'username'], '');
+  const channelSlug = getValue(channel, ['channel_slug', 'slug'], '');
+  const hasChannel = !!(channel?.id || channel?.channel_name || channel?.name);
+
+  const videoAnalytics = analyticsOverview?.totals?.video_analytics || {};
+  const channelAnalytics = analyticsOverview?.totals?.channel_analytics || {};
+
+  const stats = useMemo(() => {
+    const totalVideos = getValue(summary, ['total_videos'], 0);
+    const totalViews = getValue(summary, ['total_views', 'analytics_total_views'], 0);
+    const subscribers =
+      getValue(summary, ['total_subscribers', 'total_subscribers_gained'], null) ??
+      getValue(channel, ['subscriber_count', 'subscribers_count'], 0);
+    const productClicks = getValue(summary, ['product_clicks', 'total_cta_clicks'], 0);
+    const totalShares = getValue(summary, ['total_shares'], 0);
+
+    return [
+      { label: 'Total Videos', value: formatCompactNumber(totalVideos), sub: 'Creator uploads' },
+      { label: 'Total Views', value: formatCompactNumber(totalViews), sub: 'Audience reach' },
+      { label: 'Subscribers', value: formatCompactNumber(subscribers), sub: 'Channel community' },
+      { label: 'Products Clicks', value: formatCompactNumber(productClicks), sub: 'Marketplace intent' },
+      { label: 'Total Shares', value: formatCompactNumber(totalShares), sub: 'Share activity' },
+    ];
+  }, [summary, channel]);
+
+  const recentVideos = useMemo(() => {
+    return latestVideos.slice(0, 3).map((video, index) => ({
+      id: video?.id || index + 1,
+      title: video?.title || `Video ${index + 1}`,
+      status: normalizeStatus(video?.status || video?.moderation_status),
+      views: getValue(video, ['views_count', 'views', 'total_views'], 0),
+      comments: getValue(video, ['comments_count', 'comments'], 0),
+      date: formatDateLabel(video?.published_at || video?.created_at),
+      thumbnail:
+        video?.thumbnail_url ||
+        video?.thumbnail ||
+        video?.cover_image ||
+        video?.image_url ||
+        '',
+    }));
+  }, [latestVideos]);
+
+  const chartItems = useMemo(() => {
+    return trend30Days.map((item) => ({
+      date: item?.analytics_date,
+      value: Number(item?.[selectedMetric] || 0),
+      raw: item,
+    }));
+  }, [trend30Days, selectedMetric]);
+
+  const maxChartValue = useMemo(() => {
+    if (!chartItems.length) return 0;
+    return Math.max(...chartItems.map((item) => item.value), 0);
+  }, [chartItems]);
+
+  const weeklyEngagementText =
+    videoAnalytics?.total_watch_time_seconds || channelAnalytics?.total_watch_time_seconds
+      ? secondsToShortText(
+          videoAnalytics?.total_watch_time_seconds || channelAnalytics?.total_watch_time_seconds
+        )
+      : '30 day activity trend';
+
+  const marketplaceVerified =
+    marketplaceAuth?.verified === true ||
+    marketplaceAuth?.is_verified === true ||
+    String(marketplaceAuth?.status || '').toLowerCase() === 'verified';
+
+  const externalPlanActive =
+    externalPosting?.active === true ||
+    externalPosting?.is_active === true ||
+    String(externalPosting?.status || '').toLowerCase() === 'active';
+
+  const lastProductCheck =
+    getValue(
+      marketplaceAuth,
+      ['last_product_link_check', 'last_checked_at', 'checked_at', 'updated_at'],
+      '—'
+    );
+
+  if (loading) {
+    return (
+      <div className="videogad-dashboard-page">
+        <main className="videogad-dashboard-main">
+          <div className="videogad-panel">
+            <h2>Loading creator dashboard...</h2>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="videogad-dashboard-page">
@@ -128,7 +297,7 @@ function CreatorDashboardPage() {
           <div className="videogad-header-main">
             <div>
               <p className="eyebrow">Creator Studio</p>
-              <h1>Welcome back, Creator</h1>
+              <h1>Welcome back, {channelName}</h1>
               <span>Manage your videos, audience and marketplace actions from one place.</span>
             </div>
 
@@ -159,25 +328,38 @@ function CreatorDashboardPage() {
             </div>
 
             <div className="videogad-video-table">
-              {recentVideos.map((video) => (
-                <div className="videogad-video-row" key={video.id}>
-                  <div className="video-main">
-                    <div className="video-thumb-placeholder">Thumbnail</div>
-                    <div>
-                      <h4>{video.title}</h4>
-                      <p>{video.date}</p>
+              {recentVideos.length ? (
+                recentVideos.map((video) => (
+                  <div className="videogad-video-row" key={video.id}>
+                    <div className="video-main">
+                      {video.thumbnail ? (
+                        <img
+                          src={video.thumbnail}
+                          alt={video.title}
+                          className="video-thumb-placeholder"
+                        />
+                      ) : (
+                        <div className="video-thumb-placeholder">Thumbnail</div>
+                      )}
+
+                      <div>
+                        <h4>{video.title}</h4>
+                        <p>{video.date}</p>
+                      </div>
+                    </div>
+
+                    <div className="video-meta">
+                      <span className={`status-badge ${getStatusClass(video.status)}`}>
+                        {video.status}
+                      </span>
+                      <span>{formatCompactNumber(video.views)} views</span>
+                      <span>{formatCompactNumber(video.comments)} comments</span>
                     </div>
                   </div>
-
-                  <div className="video-meta">
-                    <span className={`status-badge ${video.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                      {video.status}
-                    </span>
-                    <span>{video.views} views</span>
-                    <span>{video.comments} comments</span>
-                  </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <div className="dashboard-empty-box">No recent videos yet.</div>
+              )}
             </div>
           </div>
 
@@ -187,12 +369,25 @@ function CreatorDashboardPage() {
             </div>
 
             <div className="quick-actions-list">
-              {quickActions.map((action) => (
-                <div className="quick-action-card" key={action.title}>
-                  <h4>{action.title}</h4>
-                  <p>{action.desc}</p>
-                </div>
-              ))}
+              <div className="quick-action-card">
+                <h4>Upload Video</h4>
+                <p>Add a new product video for viewers to watch and buy.</p>
+              </div>
+
+              <div className="quick-action-card">
+                <h4>{hasChannel ? 'Edit Channel' : 'Create Channel'}</h4>
+                <p>Set up your creator identity and storefront presence.</p>
+              </div>
+
+              <div className="quick-action-card">
+                <h4>My Videos</h4>
+                <p>Manage uploaded videos, edit details, and track status.</p>
+              </div>
+
+              <div className="quick-action-card">
+                <h4>Marketplace Auth</h4>
+                <p>Verify your Supgad store or manage external link access.</p>
+              </div>
             </div>
           </div>
         </section>
@@ -201,19 +396,58 @@ function CreatorDashboardPage() {
           <div className="videogad-panel">
             <div className="panel-head">
               <h2>Performance Snapshot</h2>
+
+              <select
+                className="analytics-mini-select"
+                value={selectedMetric}
+                onChange={(e) => setSelectedMetric(e.target.value)}
+              >
+                <option value="views_count">Views</option>
+                <option value="product_clicks">Product Clicks</option>
+                <option value="comments_count">Comments</option>
+                <option value="shares_count">Shares</option>
+              </select>
             </div>
 
-            <div className="mini-chart-box">
-              <div className="fake-bars">
-                <span style={{ height: '45%' }}></span>
-                <span style={{ height: '65%' }}></span>
-                <span style={{ height: '55%' }}></span>
-                <span style={{ height: '82%' }}></span>
-                <span style={{ height: '70%' }}></span>
-                <span style={{ height: '94%' }}></span>
-                <span style={{ height: '76%' }}></span>
+            <div className="mini-chart-box modern">
+              <div className="mini-chart-scroll">
+                <div className="mini-chart-bars-30">
+                  {chartItems.length ? (
+                    chartItems.map((item, index) => {
+                      const height =
+                        maxChartValue > 0
+                          ? `${Math.max((item.value / maxChartValue) * 100, 6)}%`
+                          : '6%';
+
+                      return (
+                        <div className="mini-chart-day" key={`${item.date}-${index}`}>
+                          <div
+                            className="mini-chart-tooltip"
+                            title={`${formatShortDay(item.date)} • ${formatCompactNumber(item.value)} ${selectedMetric.replace('_', ' ')}`}
+                          >
+                            <span className="mini-chart-tooltip-date">
+                              {formatShortDay(item.date)}
+                            </span>
+                            <strong>{formatCompactNumber(item.value)}</strong>
+                          </div>
+
+                          <span
+                            className="mini-chart-bar"
+                            style={{ height }}
+                            title={`${formatShortDay(item.date)} • ${formatCompactNumber(item.value)}`}
+                          />
+
+                          <small>{index % 5 === 0 ? formatShortDay(item.date) : ''}</small>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="dashboard-empty-box">No 30 day analytics yet.</div>
+                  )}
+                </div>
               </div>
-              <p>Weekly engagement trend</p>
+
+              <p>{weeklyEngagementText}</p>
             </div>
           </div>
 
@@ -225,16 +459,23 @@ function CreatorDashboardPage() {
             <div className="marketplace-status-box">
               <div className="marketplace-row">
                 <span>Supgad Store Auth</span>
-                <strong className="good">Verified</strong>
+                <strong className={marketplaceVerified ? 'good' : 'warn'}>
+                  {marketplaceVerified ? 'Verified' : 'Not Verified'}
+                </strong>
               </div>
+
               <div className="marketplace-row">
                 <span>External Posting Plan</span>
-                <strong className="warn">Not Active</strong>
+                <strong className={externalPlanActive ? 'good' : 'warn'}>
+                  {externalPlanActive ? 'Active' : 'Not Active'}
+                </strong>
               </div>
+
               <div className="marketplace-row">
                 <span>Last Product Link Check</span>
-                <strong>Today</strong>
+                <strong>{formatDateLabel(lastProductCheck)}</strong>
               </div>
+
               <a href="/creator-marketplace-auth" className="text-link">
                 Manage marketplace access
               </a>
