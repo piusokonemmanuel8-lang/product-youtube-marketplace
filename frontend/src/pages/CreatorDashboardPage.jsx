@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import '../creator-dashboard.css';
 import {
   getCreatorAnalyticsOverview,
   getCreatorDashboardSummary,
@@ -133,14 +134,17 @@ function CreatorDashboardPage() {
         getObject(channelResponse, 'channel') ||
         getObject(channelResponse);
 
+      const marketplaceData =
+        marketplaceResponse?.creator_marketplace_auth ||
+        getObject(marketplaceResponse);
+
       setSummary(dashboardData?.summary || null);
       setLatestVideos(dashboardData?.latest_videos || []);
       setTrend30Days(dashboardData?.trend_30_days || []);
       setAnalyticsOverview(analyticsData || null);
       setChannel(channelData || null);
-      setMarketplaceAuth(getObject(marketplaceResponse));
+      setMarketplaceAuth(marketplaceData || null);
       setExternalPosting(getObject(externalPostingResponse));
-
       setLoading(false);
     }
 
@@ -159,7 +163,7 @@ function CreatorDashboardPage() {
     const totalVideos = getValue(summary, ['total_videos'], 0);
     const totalViews = getValue(summary, ['total_views', 'analytics_total_views'], 0);
     const subscribers =
-      getValue(summary, ['total_subscribers', 'total_subscribers_gained'], null) ??
+      getValue(summary, ['total_subscribers'], 0) ||
       getValue(channel, ['subscriber_count', 'subscribers_count'], 0);
     const productClicks = getValue(summary, ['product_clicks', 'total_cta_clicks'], 0);
     const totalShares = getValue(summary, ['total_shares'], 0);
@@ -211,9 +215,11 @@ function CreatorDashboardPage() {
       : '30 day activity trend';
 
   const marketplaceVerified =
-    marketplaceAuth?.verified === true ||
-    marketplaceAuth?.is_verified === true ||
-    String(marketplaceAuth?.status || '').toLowerCase() === 'verified';
+    marketplaceAuth?.is_authenticated === 1 ||
+    marketplaceAuth?.is_authenticated === true ||
+    marketplaceAuth?.is_internal_supgad === 1 ||
+    marketplaceAuth?.is_internal_supgad === true ||
+    String(marketplaceAuth?.supgad_status || '').toLowerCase() === 'active';
 
   const externalPlanActive =
     externalPosting?.active === true ||
@@ -223,9 +229,16 @@ function CreatorDashboardPage() {
   const lastProductCheck =
     getValue(
       marketplaceAuth,
-      ['last_product_link_check', 'last_checked_at', 'checked_at', 'updated_at'],
+      ['verified_at', 'last_product_link_check', 'last_checked_at', 'checked_at', 'updated_at'],
       '—'
     );
+
+  function handleLogout() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('videogad_token');
+    localStorage.removeItem('authToken');
+    window.location.href = '/login';
+  }
 
   if (loading) {
     return (
@@ -278,6 +291,14 @@ function CreatorDashboardPage() {
             <h4>Marketplace Auth</h4>
             <span>Click to authenticate Supgad store</span>
           </a>
+
+          <button
+            type="button"
+            className="dashboard-logout-btn"
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
         </nav>
       </aside>
 

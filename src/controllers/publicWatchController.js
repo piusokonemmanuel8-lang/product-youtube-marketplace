@@ -51,11 +51,30 @@ async function getPublicWatchPage(req, res) {
         c.avatar_url,
         c.banner_url,
         c.bio,
-        c.subscriber_count,
-        c.total_views,
-        c.total_videos,
         c.status AS channel_status,
-        cp.public_name AS creator_public_name
+        cp.public_name AS creator_public_name,
+        (
+          SELECT COUNT(*)
+          FROM channel_subscriptions cs
+          WHERE cs.channel_id = c.id
+        ) AS subscriber_count,
+        (
+          SELECT COUNT(*)
+          FROM videos v2
+          WHERE v2.channel_id = c.id
+            AND v2.status = 'published'
+            AND v2.moderation_status = 'approved'
+            AND v2.visibility = 'public'
+        ) AS total_videos,
+        (
+          SELECT COUNT(*)
+          FROM video_views vv2
+          INNER JOIN videos v3 ON v3.id = vv2.video_id
+          WHERE v3.channel_id = c.id
+            AND v3.status = 'published'
+            AND v3.moderation_status = 'approved'
+            AND v3.visibility = 'public'
+        ) AS total_views
        FROM videos v
        INNER JOIN channels c ON c.id = v.channel_id
        LEFT JOIN creator_profiles cp ON cp.id = v.creator_id
@@ -166,9 +185,9 @@ async function getPublicWatchPage(req, res) {
         avatar_url: buildFileUrl(video.avatar_url),
         banner_url: buildFileUrl(video.banner_url),
         bio: video.bio,
-        subscriber_count: video.subscriber_count,
-        total_views: video.total_views,
-        total_videos: video.total_videos,
+        subscriber_count: Number(video.subscriber_count || 0),
+        total_views: Number(video.total_views || 0),
+        total_videos: Number(video.total_videos || 0),
         status: video.channel_status,
         creator_public_name: video.creator_public_name,
       },

@@ -118,18 +118,12 @@ app.get('/api/channels-test', (req, res) => {
   });
 });
 
-/*
-  Keep this small test route if you want.
-*/
 app.get('/api/product-click-test', (req, res) => {
   res.json({
     message: 'APP direct product click test works',
   });
 });
 
-/*
-  REAL LIVE ROUTES
-*/
 app.post('/api/videos/:videoId/product-click', protectOptional, recordProductClick);
 app.get('/api/creator/dashboard-summary', protect, getCreatorDashboardSummary);
 
@@ -138,9 +132,9 @@ app.use('/api/channels', channelRoutes);
 app.use('/api/creator', creatorProfileRoutes);
 app.use('/api/videos', videoRoutes);
 
+app.use('/api', channelSubscriptionRoutes);
 app.use('/api', videoReactionRoutes);
 app.use('/api', commentRoutes);
-app.use('/api', channelSubscriptionRoutes);
 app.use('/api', watchHistoryRoutes);
 app.use('/api', savedVideoRoutes);
 app.use('/api', creatorDashboardRoutes);

@@ -29,14 +29,24 @@ function normalizeArrayResponse(data) {
   return [];
 }
 
-function formatViews(value) {
-  const views = Number(value || 0);
+function formatCompactNumber(value) {
+  const number = Number(value || 0);
 
-  if (Number.isNaN(views)) {
-    return '0 views';
+  if (!Number.isFinite(number)) return '0';
+
+  if (number >= 1000000) {
+    return `${(number / 1000000).toFixed(number >= 10000000 ? 0 : 1)}M`;
   }
 
-  return `${views.toLocaleString()} views`;
+  if (number >= 1000) {
+    return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}K`;
+  }
+
+  return number.toLocaleString();
+}
+
+function formatViews(value) {
+  return `${formatCompactNumber(value)} views`;
 }
 
 function unwrapVideoItem(item) {
@@ -414,22 +424,22 @@ function HomePage() {
             <div className="vg-home-hero-right">
               <div className="vg-stat-card-large">
                 <div className="vg-stat-top">Marketplace activity</div>
-                <div className="vg-stat-big">24,000+</div>
+                <div className="vg-stat-big">{formatCompactNumber(featuredVideos.length)}</div>
                 <div className="vg-stat-note">Videos available on the marketplace</div>
               </div>
 
               <div className="vg-stat-card-small">
-                <div className="vg-stat-small-number">50,000+</div>
+                <div className="vg-stat-small-number">{formatCompactNumber(50000)}</div>
                 <div className="vg-stat-small-label">Active viewers</div>
               </div>
 
               <div className="vg-stat-card-small">
-                <div className="vg-stat-small-number">{categories.length}</div>
+                <div className="vg-stat-small-number">{formatCompactNumber(categories.length)}</div>
                 <div className="vg-stat-small-label">Categories loaded</div>
               </div>
 
               <div className="vg-stat-card-small">
-                <div className="vg-stat-small-number">{categoryTreeCount}</div>
+                <div className="vg-stat-small-number">{formatCompactNumber(categoryTreeCount)}</div>
                 <div className="vg-stat-small-label">Category tree roots</div>
               </div>
             </div>

@@ -4,6 +4,7 @@ import {
   addVideoReaction,
   addVideoView,
   addWatchHistory,
+  getChannelSubscription,
   getRelatedVideos,
   getShareSummary,
   getVideoComments,
@@ -14,6 +15,8 @@ import {
   removeVideoReaction,
   saveVideo,
   shareVideo,
+  subscribeToChannel,
+  unsubscribeFromChannel,
   unsaveVideo,
 } from '../services/watchService';
 import './WatchPage.css';
@@ -147,6 +150,9 @@ function WatchPage() {
   const [commentLoading, setCommentLoading] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
   const [buyNowLoading, setBuyNowLoading] = useState(false);
+  const [subscribeLoading, setSubscribeLoading] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [channelSubscriptionData, setChannelSubscriptionData] = useState(null);
 
   const videoRef = useRef(null);
 
@@ -187,6 +193,10 @@ function WatchPage() {
     return watchData?.channel || video?.channel || {};
   }, [watchData, video]);
 
+  const channelId = useMemo(() => {
+    return channel?.id || video?.channel_id || null;
+  }, [channel, video]);
+
   const channelSlug = useMemo(() => {
     return (
       channel?.channel_slug ||
@@ -224,6 +234,12 @@ function WatchPage() {
           throw new Error('Video id not found in watch response');
         }
 
+        const resolvedChannel =
+          watchResponse?.channel || resolvedVideo?.channel || {};
+
+        const resolvedChannelId =
+          resolvedChannel?.id || resolvedVideo?.channel_id || null;
+
         const oldViewCount =
           watchResponse?.metrics?.total_views ??
           resolvedVideo?.views_count ??
@@ -246,12 +262,16 @@ function WatchPage() {
           tagsResponse,
           reactionsResponse,
           shareSummaryResponse,
+          subscriptionResponse,
         ] = await Promise.all([
           getRelatedVideos(resolvedVideoId).catch(() => []),
           getVideoComments(resolvedVideoId).catch(() => []),
           getVideoTags(resolvedVideoId).catch(() => []),
           getVideoReactions(resolvedVideoId).catch(() => null),
           getShareSummary(resolvedVideoId).catch(() => null),
+          resolvedChannelId
+            ? getChannelSubscription(resolvedChannelId).catch(() => null)
+            : Promise.resolve(null),
         ]);
 
         const newViewCount =
@@ -279,6 +299,15 @@ function WatchPage() {
         setTags(normalizeArrayResponse(tagsResponse));
         setReactions(reactionsResponse || null);
         setShareSummary(shareSummaryResponse || null);
+        setChannelSubscriptionData(subscriptionResponse || null);
+
+        const subscribed =
+          subscriptionResponse?.subscribed === true ||
+          subscriptionResponse?.is_subscribed === true ||
+          subscriptionResponse?.status === 'subscribed' ||
+          subscriptionResponse?.subscription_status === 'subscribed';
+
+        setIsSubscribed(subscribed);
 
         const savedFlag =
           watchResponse?.saved === true ||
@@ -294,6 +323,8 @@ function WatchPage() {
         setTags([]);
         setReactions(null);
         setShareSummary(null);
+        setChannelSubscriptionData(null);
+        setIsSubscribed(false);
         setIsSaved(false);
         setErrorMessage(error.message || 'Failed to load watch page');
       } finally {
@@ -443,12 +474,49 @@ function WatchPage() {
         destination_url: destinationUrl,
       });
     } catch (error) {
-      // do not block opening external link
     } finally {
       setBuyNowLoading(false);
     }
 
     window.open(destinationUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  async function handleSubscribeToggle() {
+    if (!channelId) return;
+
+    setSubscribeLoading(true);
+    setPageMessage('');
+    setErrorMessage('');
+
+    try {
+      if (isSubscribed) {
+        await unsubscribeFromChannel(channelId);
+        setIsSubscribed(false);
+        setPageMessage('Unsubscribed successfully.');
+      } else {
+        await subscribeToChannel(channelId);
+        setIsSubscribed(true);
+        setPageMessage('Subscribed successfully.');
+      }
+
+      const updated = await getChannelSubscription(channelId).catch(() => null);
+
+      if (updated) {
+        setChannelSubscriptionData(updated);
+
+        const subscribed =
+          updated?.subscribed === true ||
+          updated?.is_subscribed === true ||
+          updated?.status === 'subscribed' ||
+          updated?.subscription_status === 'subscribed';
+
+        setIsSubscribed(subscribed);
+      }
+    } catch (error) {
+      setErrorMessage(error.message || 'Failed to update subscription.');
+    } finally {
+      setSubscribeLoading(false);
+    }
   }
 
   async function handleCommentSubmit(event) {
@@ -505,6 +573,13 @@ function WatchPage() {
       </div>
     );
   }
+
+  const liveSubscribers =
+    channelSubscriptionData?.subscribers_count ??
+    channel?.subscriber_count ??
+    channel?.subscribers_count ??
+    channel?.subscribers ??
+    0;
 
   return (
     <div className="watch-page">
@@ -623,22 +698,28 @@ function WatchPage() {
                   {channel?.name || channel?.channel_name || 'Creator Channel'}
                 </h3>
                 <p className="watch-creator-subs">
-                  {Number(
-                    channel?.subscriber_count ??
-                      channel?.subscribers_count ??
-                      channel?.subscribers ??
-                      0
-                  ).toLocaleString()} subscribers
+                  {Number(liveSubscribers).toLocaleString()} subscribers
                 </p>
               </div>
             </div>
 
-            <a
-              href={channelSlug ? `/channel/${channelSlug}` : '/channel'}
-              className="watch-subscribe-btn"
-            >
-              Visit Channel
-            </a>
+            <div className="watch-creator-actions">
+              <button
+                type="button"
+                className="watch-subscribe-btn"
+                onClick={handleSubscribeToggle}
+                disabled={subscribeLoading || !channelId}
+              >
+                {subscribeLoading ? 'Please wait...' : isSubscribed ? 'Subscribed' : 'Subscribe'}
+              </button>
+
+              <a
+                href={channelSlug ? `/channel/${channelSlug}` : '/channel'}
+                className="watch-subscribe-btn secondary"
+              >
+                Visit Channel
+              </a>
+            </div>
           </section>
 
           <section className="watch-description-card">

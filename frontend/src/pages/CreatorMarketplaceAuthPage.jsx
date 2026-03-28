@@ -1,74 +1,196 @@
 import React, { useEffect, useState } from 'react';
-import { getMyChannel } from '../services/createChannelService';
+import '../creator-dashboard.css';
+import {
+  getCurrentExternalPostingSubscription,
+  getExternalPostingPlans,
+  getMarketplaceAuthStatus,
+  getMyChannel,
+  saveMarketplaceAuth,
+} from '../services/creatorDashboardService';
 
-const stats = [
-  { label: 'Total Videos', value: '24', sub: '+3 this week' },
-  { label: 'Total Views', value: '18.4K', sub: '+1.2K this week' },
-  { label: 'Subscribers', value: '2,148', sub: '+86 this month' },
-  { label: 'Products Clicks', value: '942', sub: '+74 this week' },
-];
+function formatDateLabel(value) {
+  if (!value) return '—';
 
-const recentVideos = [
-  {
-    id: 1,
-    title: 'Best Wireless Earbuds Under $50',
-    status: 'Published',
-    views: '3.4K',
-    comments: 42,
-    date: '2 days ago',
-  },
-  {
-    id: 2,
-    title: 'Top 5 Budget Smart Watches',
-    status: 'Pending Review',
-    views: '1.1K',
-    comments: 13,
-    date: '5 days ago',
-  },
-  {
-    id: 3,
-    title: 'Amazon Finds You Will Actually Use',
-    status: 'Draft',
-    views: '—',
-    comments: 0,
-    date: 'Not published',
-  },
-];
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
 
-const quickActions = [
-  { title: 'Upload Video', desc: 'Add a new product video for viewers to watch and buy.' },
-  { title: 'Create Channel', desc: 'Set up your creator identity and storefront presence.' },
-  { title: 'My Videos', desc: 'Manage uploaded videos, edit details, and track status.' },
-  { title: 'Marketplace Auth', desc: 'Verify your Supgad store or manage external link access.' },
-];
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
 
-function CreatorDashboardPage() {
+function CreatorMarketplaceAuthPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [channel, setChannel] = useState(null);
+  const [marketplaceAuth, setMarketplaceAuth] = useState(null);
+  const [externalPosting, setExternalPosting] = useState(null);
+  const [plans, setPlans] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [pageMessage, setPageMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const [form, setForm] = useState({
+    store_name: '',
+    store_url: '',
+    what_they_sell: '',
+  });
 
   useEffect(() => {
-    async function loadMyChannel() {
-      try {
-        const response = await getMyChannel();
-        const channelData = response?.channel || response?.data || response;
+    async function loadPage() {
+      setLoading(true);
+      setErrorMessage('');
+      setPageMessage('');
 
-        if (channelData && (channelData.id || channelData.channel_name || channelData.name)) {
-          setChannel(channelData);
-        } else {
-          setChannel(null);
-        }
-      } catch (error) {
-        setChannel(null);
-      }
+      const [channelResponse, marketplaceResponse, externalPostingResponse, plansResponse] =
+        await Promise.all([
+          getMyChannel().catch(() => null),
+          getMarketplaceAuthStatus().catch(() => null),
+          getCurrentExternalPostingSubscription().catch(() => null),
+          getExternalPostingPlans().catch(() => null),
+        ]);
+
+      const channelData =
+        channelResponse?.channel || channelResponse?.data || channelResponse || null;
+
+      const authData =
+        marketplaceResponse?.creator_marketplace_auth ||
+        marketplaceResponse?.data ||
+        marketplaceResponse ||
+        null;
+
+      const externalData =
+        externalPostingResponse?.data || externalPostingResponse || null;
+
+      const plansData =
+        plansResponse?.external_posting_plans ||
+        plansResponse?.plans ||
+        plansResponse?.data ||
+        [];
+
+      setChannel(channelData);
+      setMarketplaceAuth(authData);
+      setExternalPosting(externalData);
+      setPlans(Array.isArray(plansData) ? plansData : []);
+
+      setForm({
+        store_name: authData?.supgad_account_id || '',
+        store_url: authData?.supgad_store_url || '',
+        what_they_sell: '',
+      });
+
+      setLoading(false);
     }
 
-    loadMyChannel();
+    loadPage();
   }, []);
 
-  const channelName = channel?.channel_name || channel?.name || '';
-  const channelHandle = channel?.channel_handle || channel?.handle || '';
-  const channelSlug = channel?.channel_slug || channel?.slug || '';
-  const hasChannel = !!channel;
+  function handleLogout() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('videogad_token');
+    localStorage.removeItem('authToken');
+    window.location.href = '/login';
+  }
+
+  function handleChange(event) {
+    const { name, value } = event.target;
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setErrorMessage('');
+    setPageMessage('');
+
+    const cleanStoreName = form.store_name.trim();
+    const cleanStoreUrl = form.store_url.trim();
+    const lowerUrl = cleanStoreUrl.toLowerCase();
+
+    if (!cleanStoreName) {
+      setSaving(false);
+      setErrorMessage('Store name is required.');
+      return;
+    }
+
+    if (!cleanStoreUrl) {
+      setSaving(false);
+      setErrorMessage('Supgad store URL is required.');
+      return;
+    }
+
+    if (!lowerUrl.includes('supgad.com')) {
+      setSaving(false);
+      setErrorMessage('Only Supgad store URLs are allowed.');
+      return;
+    }
+
+    try {
+      await saveMarketplaceAuth({
+        auth_type: 'supgad',
+        supgad_account_id: cleanStoreName,
+        supgad_store_url: cleanStoreUrl,
+      });
+
+      const refreshed = await getMarketplaceAuthStatus().catch(() => null);
+      const refreshedAuth =
+        refreshed?.creator_marketplace_auth ||
+        refreshed?.data ||
+        refreshed ||
+        null;
+
+      setMarketplaceAuth(refreshedAuth);
+      setPageMessage('Marketplace authentication saved successfully.');
+    } catch (error) {
+      setErrorMessage(error.message || 'Failed to save marketplace authentication.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const channelName =
+    channel?.channel_name || channel?.name || 'Creator';
+  const channelHandle =
+    channel?.channel_handle || channel?.handle || '';
+  const channelSlug =
+    channel?.channel_slug || channel?.slug || '';
+  const hasChannel = !!(channel?.id || channel?.channel_name || channel?.name);
+
+  const isVerified =
+    marketplaceAuth?.is_authenticated === 1 ||
+    marketplaceAuth?.is_authenticated === true ||
+    marketplaceAuth?.is_internal_supgad === 1 ||
+    marketplaceAuth?.is_internal_supgad === true ||
+    String(marketplaceAuth?.supgad_status || '').toLowerCase() === 'active';
+
+  const authStatus = isVerified ? 'Verified' : 'Pending';
+  const lastCheck = formatDateLabel(
+    marketplaceAuth?.verified_at || marketplaceAuth?.updated_at
+  );
+
+  const externalPlanStatus =
+    externalPosting?.active === true ||
+    externalPosting?.is_active === true ||
+    String(externalPosting?.status || '').toLowerCase() === 'active'
+      ? 'Active'
+      : 'Not Active';
+
+  if (loading) {
+    return (
+      <div className="videogad-dashboard-page">
+        <main className="videogad-dashboard-main">
+          <div className="videogad-panel">
+            <h2>Loading marketplace auth...</h2>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="videogad-dashboard-page">
@@ -86,11 +208,10 @@ function CreatorDashboardPage() {
         </div>
 
         <nav className="videogad-dashboard-nav">
-          <a href="/creator-dashboard" className="active">Dashboard</a>
+          <a href="/creator-dashboard">Dashboard</a>
           <a href="/create-channel">{hasChannel ? 'Edit Channel' : 'Create Channel'}</a>
           <a href="/upload-video">Upload Video</a>
           <a href="/my-videos">My Videos</a>
-          <a href="/creator-marketplace-auth">Marketplace Auth</a>
           <a href="/creator-analytics">Analytics</a>
           <a href="/creator-earnings">Earnings</a>
           <a href="/creator-payout">Payout</a>
@@ -104,6 +225,20 @@ function CreatorDashboardPage() {
               <small>{channelSlug}</small>
             </div>
           ) : null}
+
+          <a href="/creator-marketplace-auth" className="creator-sidebar-auth-box active">
+            <p className="creator-channel-label">Authentication</p>
+            <h4>Marketplace Auth</h4>
+            <span>Connect your Supgad store</span>
+          </a>
+
+          <button
+            type="button"
+            className="dashboard-logout-btn"
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
         </nav>
       </aside>
 
@@ -123,116 +258,127 @@ function CreatorDashboardPage() {
           <div className="videogad-header-main">
             <div>
               <p className="eyebrow">Creator Studio</p>
-              <h1>Welcome back, Creator</h1>
-              <span>Manage your videos, audience and marketplace actions from one place.</span>
+              <h1>Marketplace Authentication</h1>
+              <span>Submit your Supgad store link to unlock Supgad product links while uploading videos.</span>
             </div>
 
             <div className="videogad-dashboard-header-actions">
-              <a href="/upload-video" className="primary-btn">Upload Video</a>
-              <a href="/create-channel" className="ghost-btn">
-                {hasChannel ? 'Edit Channel' : 'Create Channel'}
-              </a>
+              <a href="/creator-dashboard" className="ghost-btn">Back to Dashboard</a>
             </div>
           </div>
         </header>
 
+        {errorMessage ? (
+          <div className="watch-inline-message error">{errorMessage}</div>
+        ) : null}
+
+        {pageMessage ? (
+          <div className="watch-inline-message success">{pageMessage}</div>
+        ) : null}
+
         <section className="videogad-stats-grid">
-          {stats.map((item) => (
-            <div className="videogad-stat-card" key={item.label}>
-              <p>{item.label}</p>
-              <h3>{item.value}</h3>
-              <span>{item.sub}</span>
-            </div>
-          ))}
+          <div className="videogad-stat-card">
+            <p>Auth Status</p>
+            <h3>{authStatus}</h3>
+            <span>{isVerified ? 'Supgad store approved' : 'Awaiting verification'}</span>
+          </div>
+
+          <div className="videogad-stat-card">
+            <p>Store Type</p>
+            <h3>Supgad</h3>
+            <span>Internal store authentication</span>
+          </div>
+
+          <div className="videogad-stat-card">
+            <p>Last Verification</p>
+            <h3>{lastCheck}</h3>
+            <span>Latest verification time</span>
+          </div>
+
+          <div className="videogad-stat-card">
+            <p>External Plans</p>
+            <h3>{plans.length}</h3>
+            <span>{externalPlanStatus}</span>
+          </div>
         </section>
 
         <section className="videogad-dashboard-content-grid">
           <div className="videogad-panel large">
             <div className="panel-head">
-              <h2>Recent Videos</h2>
-              <a href="/my-videos">See all</a>
+              <h2>Supgad Store Form</h2>
             </div>
 
-            <div className="videogad-video-table">
-              {recentVideos.map((video) => (
-                <div className="videogad-video-row" key={video.id}>
-                  <div className="video-main">
-                    <div className="video-thumb-placeholder">Thumbnail</div>
-                    <div>
-                      <h4>{video.title}</h4>
-                      <p>{video.date}</p>
-                    </div>
-                  </div>
-
-                  <div className="video-meta">
-                    <span className={`status-badge ${video.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                      {video.status}
-                    </span>
-                    <span>{video.views} views</span>
-                    <span>{video.comments} comments</span>
-                  </div>
+            <form onSubmit={handleSubmit} className="marketplace-auth-form">
+              <div className="marketplace-auth-grid">
+                <div className="marketplace-auth-field">
+                  <label>Store Name</label>
+                  <input
+                    type="text"
+                    name="store_name"
+                    value={form.store_name}
+                    onChange={handleChange}
+                    placeholder="Enter your store name"
+                  />
                 </div>
-              ))}
-            </div>
-          </div>
 
-          <div className="videogad-panel">
-            <div className="panel-head">
-              <h2>Quick Actions</h2>
-            </div>
-
-            <div className="quick-actions-list">
-              {quickActions.map((action) => (
-                <div className="quick-action-card" key={action.title}>
-                  <h4>{action.title}</h4>
-                  <p>{action.desc}</p>
+                <div className="marketplace-auth-field">
+                  <label>Supgad Store URL</label>
+                  <input
+                    type="text"
+                    name="store_url"
+                    value={form.store_url}
+                    onChange={handleChange}
+                    placeholder="https://supgad.com/store/your-store-name"
+                  />
                 </div>
-              ))}
-            </div>
-          </div>
-        </section>
 
-        <section className="videogad-dashboard-content-grid lower">
-          <div className="videogad-panel">
-            <div className="panel-head">
-              <h2>Performance Snapshot</h2>
-            </div>
-
-            <div className="mini-chart-box">
-              <div className="fake-bars">
-                <span style={{ height: '45%' }}></span>
-                <span style={{ height: '65%' }}></span>
-                <span style={{ height: '55%' }}></span>
-                <span style={{ height: '82%' }}></span>
-                <span style={{ height: '70%' }}></span>
-                <span style={{ height: '94%' }}></span>
-                <span style={{ height: '76%' }}></span>
+                <div className="marketplace-auth-field full">
+                  <label>What Do You Sell?</label>
+                  <input
+                    type="text"
+                    name="what_they_sell"
+                    value={form.what_they_sell}
+                    onChange={handleChange}
+                    placeholder="Phones, gadgets, fashion, beauty, electronics..."
+                  />
+                </div>
               </div>
-              <p>Weekly engagement trend</p>
-            </div>
+
+              <div className="marketplace-auth-actions">
+                <button type="submit" className="primary-btn" disabled={saving}>
+                  {saving ? 'Saving...' : 'Submit for Authentication'}
+                </button>
+              </div>
+            </form>
           </div>
 
           <div className="videogad-panel">
             <div className="panel-head">
-              <h2>Marketplace Status</h2>
+              <h2>Current Auth Record</h2>
             </div>
 
             <div className="marketplace-status-box">
               <div className="marketplace-row">
-                <span>Supgad Store Auth</span>
-                <strong className="good">Verified</strong>
+                <span>Auth Type</span>
+                <strong>{marketplaceAuth?.auth_type || '—'}</strong>
               </div>
+
               <div className="marketplace-row">
-                <span>External Posting Plan</span>
-                <strong className="warn">Not Active</strong>
+                <span>Saved Store Name</span>
+                <strong>{marketplaceAuth?.supgad_account_id || '—'}</strong>
               </div>
+
               <div className="marketplace-row">
-                <span>Last Product Link Check</span>
-                <strong>Today</strong>
+                <span>Saved Store URL</span>
+                <strong>{marketplaceAuth?.supgad_store_url || '—'}</strong>
               </div>
-              <a href="/creator-marketplace-auth" className="text-link">
-                Manage marketplace access
-              </a>
+
+              <div className="marketplace-row">
+                <span>Supgad Status</span>
+                <strong className={isVerified ? 'good' : 'warn'}>
+                  {marketplaceAuth?.supgad_status || 'none'}
+                </strong>
+              </div>
             </div>
           </div>
         </section>
@@ -241,4 +387,4 @@ function CreatorDashboardPage() {
   );
 }
 
-export default CreatorDashboardPage;
+export default CreatorMarketplaceAuthPage;

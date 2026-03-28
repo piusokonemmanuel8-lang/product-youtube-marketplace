@@ -39,16 +39,9 @@ async function getCreatorDashboardSummary(req, res) {
     const [publishedVideoCountRows] = await pool.query(
       `SELECT COUNT(*) AS published_videos
        FROM videos
-       WHERE creator_id = ? AND status = 'published'`,
-      [creatorId]
-    );
-
-    const [channelTotalsRows] = await pool.query(
-      `SELECT
-          COALESCE(SUM(subscriber_count), 0) AS total_subscribers,
-          COALESCE(SUM(total_views), 0) AS total_channel_views
-       FROM channels
-       WHERE creator_id = ?`,
+       WHERE creator_id = ?
+         AND status = 'published'
+         AND moderation_status = 'approved'`,
       [creatorId]
     );
 
@@ -69,6 +62,7 @@ async function getCreatorDashboardSummary(req, res) {
     const channelIds = channelIdsRows.map((row) => row.id);
     const videoIds = videoIdsRows.map((row) => row.id);
 
+    let totalSubscribers = 0;
     let totalWatchTimeSeconds = 0;
     let totalRevenueAmount = 0;
     let totalSubscribersGained = 0;
@@ -76,6 +70,15 @@ async function getCreatorDashboardSummary(req, res) {
     let totalDislikes = 0;
 
     if (channelIds.length > 0) {
+      const [subscriptionRows] = await pool.query(
+        `SELECT COUNT(*) AS total_subscribers
+         FROM channel_subscriptions
+         WHERE channel_id IN (?)`,
+        [channelIds]
+      );
+
+      totalSubscribers = Number(subscriptionRows[0]?.total_subscribers || 0);
+
       const [channelAnalyticsRows] = await pool.query(
         `SELECT
             COALESCE(SUM(views), 0) AS total_views,
@@ -149,20 +152,39 @@ async function getCreatorDashboardSummary(req, res) {
 
     const [latestChannels] = await pool.query(
       `SELECT
-          id,
-          channel_name,
-          channel_handle,
-          channel_slug,
-          avatar_url,
-          banner_url,
-          subscriber_count,
-          total_views,
-          total_videos,
-          status,
-          created_at
-       FROM channels
-       WHERE creator_id = ?
-       ORDER BY id DESC
+          ch.id,
+          ch.channel_name,
+          ch.channel_handle,
+          ch.channel_slug,
+          ch.avatar_url,
+          ch.banner_url,
+          ch.status,
+          ch.created_at,
+          (
+            SELECT COUNT(*)
+            FROM channel_subscriptions cs
+            WHERE cs.channel_id = ch.id
+          ) AS subscriber_count,
+          (
+            SELECT COUNT(*)
+            FROM videos v
+            WHERE v.channel_id = ch.id
+              AND v.status = 'published'
+              AND v.moderation_status = 'approved'
+              AND v.visibility = 'public'
+          ) AS total_videos,
+          (
+            SELECT COUNT(*)
+            FROM video_views vv
+            INNER JOIN videos v ON v.id = vv.video_id
+            WHERE v.channel_id = ch.id
+              AND v.status = 'published'
+              AND v.moderation_status = 'approved'
+              AND v.visibility = 'public'
+          ) AS total_views
+       FROM channels ch
+       WHERE ch.creator_id = ?
+       ORDER BY ch.id DESC
        LIMIT 5`,
       [creatorId]
     );
@@ -258,11 +280,7 @@ async function getCreatorDashboardSummary(req, res) {
       [creatorId, creatorId, creatorId, creatorId]
     );
 
-    const totalViews =
-      Number(realViewRows[0]?.total_views || 0) ||
-      Number(creatorProfile.lifetime_views || 0) ||
-      Number(channelTotalsRows[0]?.total_channel_views || 0);
-
+    const totalViews = Number(realViewRows[0]?.total_views || 0);
     const productClicks =
       Number(productClickRows[0]?.total_product_clicks || 0) ||
       Number(creatorProfile.lifetime_sales_clicks || 0);
@@ -286,7 +304,7 @@ async function getCreatorDashboardSummary(req, res) {
         total_channels: Number(channelCountRows[0]?.total_channels || 0),
         total_videos: Number(videoCountRows[0]?.total_videos || 0),
         published_videos: Number(publishedVideoCountRows[0]?.published_videos || 0),
-        total_subscribers: Number(channelTotalsRows[0]?.total_subscribers || 0),
+        total_subscribers: totalSubscribers,
         total_views: totalViews,
         analytics_total_views: totalViews,
         product_clicks: productClicks,
@@ -310,7 +328,12 @@ async function getCreatorDashboardSummary(req, res) {
         comments_count: Number(row.comments_count || 0),
         shares_count: Number(row.shares_count || 0),
       })),
-      latest_channels: latestChannels,
+      latest_channels: latestChannels.map((channel) => ({
+        ...channel,
+        subscriber_count: Number(channel.subscriber_count || 0),
+        total_videos: Number(channel.total_videos || 0),
+        total_views: Number(channel.total_views || 0),
+      })),
       latest_videos: latestVideos,
     });
   } catch (error) {

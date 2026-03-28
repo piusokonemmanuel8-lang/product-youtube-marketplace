@@ -99,6 +99,26 @@ function isSupgadUrl(url) {
   }
 }
 
+function isSupgadMarketplaceAuthActive(marketplaceAuth) {
+  if (!marketplaceAuth) {
+    return false;
+  }
+
+  const authType = String(marketplaceAuth.auth_type || '').toLowerCase();
+  const supgadStatus = String(marketplaceAuth.supgad_status || '').toLowerCase();
+  const authStoreUrl = String(marketplaceAuth.supgad_store_url || '').toLowerCase();
+
+  return (
+    authType === 'supgad' ||
+    Number(marketplaceAuth.is_authenticated) === 1 ||
+    marketplaceAuth.is_authenticated === true ||
+    Number(marketplaceAuth.is_internal_supgad) === 1 ||
+    marketplaceAuth.is_internal_supgad === true ||
+    supgadStatus === 'active' ||
+    authStoreUrl.includes('supgad.com')
+  );
+}
+
 async function getCreatorProfileByUserId(userId) {
   const [creatorProfiles] = await pool.query(
     'SELECT id FROM creator_profiles WHERE user_id = ? LIMIT 1',
@@ -193,13 +213,7 @@ function canPostBuyNowLink(marketplaceAuth, buyNowUrl) {
   const linkIsSupgad = isSupgadUrl(buyNowUrl);
 
   if (linkIsSupgad) {
-    if (
-      marketplaceAuth &&
-      marketplaceAuth.auth_type === 'supgad' &&
-      Number(marketplaceAuth.is_authenticated) === 1 &&
-      Number(marketplaceAuth.is_internal_supgad) === 1 &&
-      Number(marketplaceAuth.payment_required) === 0
-    ) {
+    if (isSupgadMarketplaceAuthActive(marketplaceAuth)) {
       return {
         allowed: true,
         linkType: 'supgad',
@@ -221,7 +235,7 @@ function canPostBuyNowLink(marketplaceAuth, buyNowUrl) {
     };
   }
 
-  if (marketplaceAuth.auth_type !== 'external') {
+  if (String(marketplaceAuth.auth_type || '').toLowerCase() !== 'external') {
     return {
       allowed: false,
       statusCode: 403,
@@ -316,7 +330,6 @@ async function createVideoUploadUrl(req, res) {
     });
 
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 900 });
-
     const fileUrl = buildMediaUrl(objectKey);
 
     return res.status(200).json({
