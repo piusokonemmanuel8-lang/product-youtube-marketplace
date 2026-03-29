@@ -80,6 +80,14 @@ function groupVideosByCampaign(videos) {
   return map;
 }
 
+function getSavedTheme() {
+  try {
+    return localStorage.getItem('videogad_ads_analytics_theme') || 'dark';
+  } catch (error) {
+    return 'dark';
+  }
+}
+
 function CreatorAdsAnalyticsPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [campaigns, setCampaigns] = useState([]);
@@ -89,6 +97,7 @@ function CreatorAdsAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [themeMode, setThemeMode] = useState(getSavedTheme());
 
   useEffect(() => {
     async function loadPage() {
@@ -126,6 +135,12 @@ function CreatorAdsAnalyticsPage() {
 
     loadPage();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('videogad_ads_analytics_theme', themeMode);
+    } catch (error) {}
+  }, [themeMode]);
 
   useEffect(() => {
     async function loadStats() {
@@ -202,8 +217,12 @@ function CreatorAdsAnalyticsPage() {
     window.location.href = '/login';
   }
 
+  function toggleThemeMode() {
+    setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
+  }
+
   return (
-    <div className="videogad-dashboard-page">
+    <div className={`videogad-dashboard-page ads-analytics-theme-${themeMode}`}>
       <aside className={`videogad-dashboard-sidebar ${menuOpen ? 'open' : ''}`}>
         <div className="videogad-sidebar-top">
           <div className="videogad-brand">VideoGad</div>
@@ -260,6 +279,14 @@ function CreatorAdsAnalyticsPage() {
             </div>
 
             <div className="videogad-dashboard-header-actions">
+              <button
+                type="button"
+                className="ghost-btn ads-theme-toggle-btn"
+                onClick={toggleThemeMode}
+              >
+                {themeMode === 'dark' ? 'Light Mode' : 'Dark Mode'}
+              </button>
+
               <a href="/creator-ads" className="primary-btn">Manage Ads</a>
             </div>
           </div>
@@ -324,20 +351,12 @@ function CreatorAdsAnalyticsPage() {
                       key={campaignId}
                       type="button"
                       onClick={() => setSelectedCampaignId(campaignId)}
-                      className="videogad-video-row"
-                      style={{
-                        width: '100%',
-                        textAlign: 'left',
-                        background: isActive ? 'rgba(255,255,255,0.04)' : 'transparent',
-                        border: isActive ? '1px solid rgba(255,255,255,0.12)' : '1px solid transparent',
-                        borderRadius: '16px',
-                        cursor: 'pointer',
-                      }}
+                      className={`videogad-video-row ads-analytics-row ${isActive ? 'ads-analytics-row-active' : ''}`}
                     >
                       <div className="video-main">
                         <div className="video-thumb-placeholder">AD</div>
 
-                        <div>
+                        <div className="ads-analytics-main-copy">
                           <h4>{pickCampaignTitle(campaign)}</h4>
                           <p>
                             {campaign?.advertiser_name || 'Advertiser'} • {formatDate(campaign?.created_at)}
@@ -345,7 +364,7 @@ function CreatorAdsAnalyticsPage() {
                         </div>
                       </div>
 
-                      <div className="video-meta">
+                      <div className="video-meta ads-analytics-meta">
                         <span className={`status-badge ${getStatusClass(campaign?.status)}`}>
                           {formatStatus(campaign?.status)}
                         </span>
@@ -368,7 +387,7 @@ function CreatorAdsAnalyticsPage() {
             </div>
 
             {selectedCampaign ? (
-              <div className="marketplace-status-box">
+              <div className="marketplace-status-box ads-analytics-selected-box">
                 <div className="marketplace-row">
                   <span>Campaign</span>
                   <strong>{pickCampaignTitle(selectedCampaign)}</strong>
@@ -434,7 +453,7 @@ function CreatorAdsAnalyticsPage() {
             selectedVideos.length ? (
               <div className="videogad-video-table">
                 {selectedVideos.map((video) => (
-                  <div className="videogad-video-row" key={video.id}>
+                  <div className="videogad-video-row ads-analytics-video-row" key={video.id}>
                     <div className="video-main">
                       {video?.thumbnail_key ? (
                         <img
@@ -446,7 +465,7 @@ function CreatorAdsAnalyticsPage() {
                         <div className="video-thumb-placeholder">Ad Video</div>
                       )}
 
-                      <div>
+                      <div className="ads-analytics-main-copy">
                         <h4>{pickVideoTitle(video)}</h4>
                         <p>
                           Duration: {formatNumber(video?.duration_seconds)}s • Created: {formatDate(video?.created_at)}
@@ -454,7 +473,7 @@ function CreatorAdsAnalyticsPage() {
                       </div>
                     </div>
 
-                    <div className="video-meta">
+                    <div className="video-meta ads-analytics-meta">
                       <span className={`status-badge ${getStatusClass(video?.status)}`}>
                         {formatStatus(video?.status)}
                       </span>

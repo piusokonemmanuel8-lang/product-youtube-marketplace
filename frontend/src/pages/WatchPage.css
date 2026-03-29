@@ -335,6 +335,14 @@
   min-width: 0;
 }
 
+.watch-sidebar-block + .watch-sidebar-block {
+  margin-top: 22px;
+}
+
+.watch-related-section {
+  margin-top: 26px;
+}
+
 .watch-related-list {
   display: flex;
   flex-direction: column;
@@ -352,6 +360,32 @@
   color: inherit;
   min-width: 0;
   text-decoration: none;
+}
+
+.watch-featured-ad-item {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.watch-featured-ad-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(17, 24, 39, 0.08);
+  border-color: #d9dfea;
+}
+
+.watch-featured-ad-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 45, 85, 0.1);
+  color: #d61f45;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .watch-related-thumb {

@@ -215,6 +215,70 @@ async function pickBestAd({
   return ads.length ? ads[0] : null;
 }
 
+async function getFeaturedAds(req, res) {
+  try {
+    const requestedLimit = Number(req.query.limit || 10);
+    const limit = Math.max(1, Math.min(requestedLimit, 10));
+
+    const [ads] = await pool.query(
+      `
+      SELECT
+        ac.id AS campaign_id,
+        ac.title AS campaign_title,
+        ac.destination_url,
+        ac.skip_after_seconds,
+        ac.starts_at,
+        ac.ends_at,
+        av.id AS ad_video_id,
+        av.title AS ad_title,
+        av.video_key,
+        av.thumbnail_key,
+        av.duration_seconds,
+        COALESCE(stats.total_impressions, 0) AS total_impressions,
+        stats.last_impression_at
+      FROM ad_campaigns ac
+      INNER JOIN ad_videos av ON av.campaign_id = ac.id
+      LEFT JOIN (
+        SELECT
+          campaign_id,
+          COUNT(*) AS total_impressions,
+          MAX(created_at) AS last_impression_at
+        FROM ad_impressions
+        GROUP BY campaign_id
+      ) stats ON stats.campaign_id = ac.id
+      WHERE ac.status = 'active'
+        AND av.status = 'approved'
+        AND av.video_key IS NOT NULL
+        AND av.video_key != ''
+        AND (ac.starts_at IS NULL OR ac.starts_at <= NOW())
+        AND (ac.ends_at IS NULL OR ac.ends_at >= NOW())
+      ORDER BY
+        total_impressions DESC,
+        stats.last_impression_at DESC,
+        ac.id DESC,
+        av.id DESC
+      LIMIT ?
+      `,
+      [limit]
+    );
+
+    return res.status(200).json({
+      featured_ads: ads.map((ad) => ({
+        ...ad,
+        duration_seconds: Number(ad.duration_seconds || 15) || 15,
+        total_impressions: Number(ad.total_impressions || 0),
+        video_key: buildMediaUrl(req, ad.video_key),
+        thumbnail_key: buildMediaUrl(req, ad.thumbnail_key),
+      })),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to fetch featured ads',
+      error: error.message,
+    });
+  }
+}
+
 async function getAdForVideo(req, res) {
   try {
     const { video_id, break_type, session_id } = req.query;
@@ -275,4 +339,5 @@ async function getAdForVideo(req, res) {
 
 module.exports = {
   getAdForVideo,
+  getFeaturedAds,
 };

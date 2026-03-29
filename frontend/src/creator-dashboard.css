@@ -668,3 +668,153 @@
     justify-content: center;
   }
 }
+/* =========================
+   ADS ANALYTICS VISIBILITY + THEME TOGGLE
+========================= */
+
+.ads-theme-toggle-btn {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+}
+
+.ads-analytics-row,
+.ads-analytics-video-row {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-sizing: border-box;
+}
+
+.ads-analytics-row-active {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+}
+
+.ads-analytics-main-copy h4,
+.ads-analytics-main-copy p,
+.ads-analytics-meta span,
+.ads-analytics-selected-box .marketplace-row span,
+.ads-analytics-selected-box .marketplace-row strong,
+.ads-analytics-video-row .video-main h4,
+.ads-analytics-video-row .video-main p {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.ads-analytics-main-copy h4,
+.ads-analytics-video-row .video-main h4 {
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.ads-analytics-main-copy p,
+.ads-analytics-video-row .video-main p,
+.ads-analytics-meta span {
+  color: #d7deef;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.ads-analytics-selected-box {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ads-analytics-selected-box .marketplace-row {
+  padding: 6px 0;
+  margin-bottom: 10px;
+}
+
+.ads-analytics-selected-box .marketplace-row span {
+  color: #cbd5ea;
+  font-weight: 700;
+}
+
+.ads-analytics-selected-box .marketplace-row strong {
+  color: #ffffff;
+  font-weight: 800;
+}
+
+/* LIGHT MODE */
+
+.ads-analytics-theme-light {
+  background: #f5f7fb;
+  color: #162033;
+}
+
+.ads-analytics-theme-light .videogad-dashboard-sidebar {
+  background: #ffffff;
+  border-right: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.ads-analytics-theme-light .videogad-brand,
+.ads-analytics-theme-light .videogad-dashboard-header h1,
+.ads-analytics-theme-light .panel-head h2,
+.ads-analytics-theme-light .ads-analytics-main-copy h4,
+.ads-analytics-theme-light .ads-analytics-video-row .video-main h4,
+.ads-analytics-theme-light .ads-analytics-selected-box .marketplace-row strong,
+.ads-analytics-theme-light .videogad-stat-card h3 {
+  color: #111827;
+}
+
+.ads-analytics-theme-light .videogad-dashboard-nav a {
+  color: #475569;
+}
+
+.ads-analytics-theme-light .videogad-dashboard-nav a:hover,
+.ads-analytics-theme-light .videogad-dashboard-nav a.active {
+  background: #eef2ff;
+  color: #111827;
+}
+
+.ads-analytics-theme-light .videogad-dashboard-main {
+  background: #f5f7fb;
+}
+
+.ads-analytics-theme-light .videogad-panel,
+.ads-analytics-theme-light .videogad-stat-card,
+.ads-analytics-theme-light .marketplace-status-box,
+.ads-analytics-theme-light .quick-action-card,
+.ads-analytics-theme-light .mini-chart-box,
+.ads-analytics-theme-light .dashboard-empty-box {
+  background: #ffffff;
+  color: #162033;
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+.ads-analytics-theme-light .videogad-video-row {
+  background: #f8fafc;
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+.ads-analytics-theme-light .ads-analytics-row-active {
+  background: #eef2ff !important;
+  border-color: rgba(99, 102, 241, 0.22) !important;
+}
+
+.ads-analytics-theme-light .videogad-dashboard-header span,
+.ads-analytics-theme-light .videogad-dashboard-header .eyebrow,
+.ads-analytics-theme-light .videogad-stat-card p,
+.ads-analytics-theme-light .videogad-stat-card span,
+.ads-analytics-theme-light .ads-analytics-main-copy p,
+.ads-analytics-theme-light .ads-analytics-video-row .video-main p,
+.ads-analytics-theme-light .ads-analytics-meta span,
+.ads-analytics-theme-light .ads-analytics-selected-box .marketplace-row span {
+  color: #475569 !important;
+}
+
+.ads-analytics-theme-light .ghost-btn {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  color: #111827;
+}
+
+.ads-analytics-theme-light .dashboard-logout-btn {
+  color: #111827;
+}
+
+.ads-analytics-theme-light .video-thumb-placeholder {
+  background: linear-gradient(135deg, #dbe4f3, #c9d5e8);
+  color: #475569;
+}

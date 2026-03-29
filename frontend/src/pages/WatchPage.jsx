@@ -149,10 +149,20 @@ function getOrCreateAdSessionId() {
   }
 }
 
+function normalizeUrl(url) {
+  const rawUrl = String(url || '').trim();
+
+  if (!rawUrl) return '';
+  if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
+
+  return `https://${rawUrl}`;
+}
+
 function WatchPage() {
   const [slug, setSlug] = useState(getSlugFromUrl());
   const [watchData, setWatchData] = useState(null);
   const [relatedVideos, setRelatedVideos] = useState([]);
+  const [featuredAds, setFeaturedAds] = useState([]);
   const [comments, setComments] = useState([]);
   const [tags, setTags] = useState([]);
   const [reactions, setReactions] = useState(null);
@@ -182,6 +192,7 @@ function WatchPage() {
   const adCountdownIntervalRef = useRef(null);
   const adEndedRef = useRef(false);
   const adImpressionTrackedRef = useRef(false);
+  const adImpressionIdRef = useRef(null);
 
   useEffect(() => {
     const syncSlug = () => setSlug(getSlugFromUrl());
@@ -259,6 +270,7 @@ function WatchPage() {
       setAdCountdown(3);
       adEndedRef.current = false;
       adImpressionTrackedRef.current = false;
+      adImpressionIdRef.current = null;
 
       if (adCountdownIntervalRef.current) {
         clearInterval(adCountdownIntervalRef.current);
@@ -308,6 +320,7 @@ function WatchPage() {
           reactionsResponse,
           shareSummaryResponse,
           subscriptionResponse,
+          featuredAdsResponse,
         ] = await Promise.all([
           getRelatedVideos(resolvedVideoId).catch(() => []),
           getVideoComments(resolvedVideoId).catch(() => []),
@@ -317,6 +330,7 @@ function WatchPage() {
           resolvedChannelId
             ? getChannelSubscription(resolvedChannelId).catch(() => null)
             : Promise.resolve(null),
+          api.request('/ads/featured?limit=10').catch(() => ({ featured_ads: [] })),
         ]);
 
         const newViewCount =
@@ -340,6 +354,11 @@ function WatchPage() {
         });
 
         setRelatedVideos(normalizeArrayResponse(relatedResponse));
+        setFeaturedAds(
+          Array.isArray(featuredAdsResponse?.featured_ads)
+            ? featuredAdsResponse.featured_ads.slice(0, 10)
+            : []
+        );
         setComments(normalizeArrayResponse(commentsResponse));
         setTags(normalizeArrayResponse(tagsResponse));
         setReactions(reactionsResponse || null);
@@ -401,6 +420,7 @@ function WatchPage() {
       } catch (error) {
         setWatchData(null);
         setRelatedVideos([]);
+        setFeaturedAds([]);
         setComments([]);
         setTags([]);
         setReactions(null);
@@ -440,6 +460,15 @@ function WatchPage() {
             break_type: 'pre-roll',
             session_id: adData.session_id,
           },
+        })
+        .then((response) => {
+          const impressionId =
+            response?.impression?.id ||
+            response?.data?.impression?.id ||
+            response?.id ||
+            null;
+
+          adImpressionIdRef.current = impressionId;
         })
         .catch(() => null);
     }
@@ -508,10 +537,17 @@ function WatchPage() {
     setShowPrerollAd(false);
     setSkipReady(false);
     setAdCountdown(0);
+    adImpressionTrackedRef.current = false;
+    adImpressionIdRef.current = null;
   }
 
   async function handleSkipAd() {
-    if (!adData?.ad_video_id) {
+    const impressionId = adImpressionIdRef.current;
+    const watchedSeconds = adVideoRef.current
+      ? Math.floor(Number(adVideoRef.current.currentTime || 0))
+      : 0;
+
+    if (!impressionId) {
       finishAdPlayback();
       return;
     }
@@ -520,10 +556,8 @@ function WatchPage() {
       await api.request('/ads/skips', {
         method: 'POST',
         body: {
-          campaign_id: adData.campaign_id,
-          ad_video_id: adData.ad_video_id,
-          video_id: adData.viewer_video_id,
-          session_id: adData.session_id,
+          impression_id: impressionId,
+          watched_seconds: watchedSeconds,
         },
       });
     } catch (error) {}
@@ -547,7 +581,17 @@ function WatchPage() {
       });
     } catch (error) {}
 
-    window.open(adData.destination_url, '_blank', 'noopener,noreferrer');
+    const finalUrl = normalizeUrl(adData.destination_url);
+    if (!finalUrl) return;
+
+    window.open(finalUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  async function handleFeaturedAdClick(ad) {
+    const finalUrl = normalizeUrl(ad?.destination_url);
+    if (!finalUrl) return;
+
+    window.open(finalUrl, '_blank', 'noopener,noreferrer');
   }
 
   async function handleReact(type) {
@@ -680,7 +724,10 @@ function WatchPage() {
       setBuyNowLoading(false);
     }
 
-    window.open(destinationUrl, '_blank', 'noopener,noreferrer');
+    const finalUrl = normalizeUrl(destinationUrl);
+    if (!finalUrl) return;
+
+    window.open(finalUrl, '_blank', 'noopener,noreferrer');
   }
 
   async function handleSubscribeToggle() {
@@ -1019,7 +1066,7 @@ function WatchPage() {
 
                 <a
                   className="watch-buy-btn"
-                  href={video?.buy_link || video?.buy_now_url || '#'}
+                  href={normalizeUrl(video?.buy_link || video?.buy_now_url || '#') || '#'}
                   target="_blank"
                   rel="noreferrer"
                   onClick={handleBuyNowClick}
@@ -1140,50 +1187,92 @@ function WatchPage() {
         </main>
 
         <aside className="watch-sidebar">
-          <h3 className="watch-sidebar-title">Related Videos</h3>
+          <section className="watch-sidebar-block">
+            <h3 className="watch-sidebar-title">Featured Ads</h3>
 
-          <div className="watch-related-list">
-            {relatedVideos.length ? (
-              relatedVideos.map((item, index) => {
-                const relatedSlug = item?.slug || item?.video_slug || '';
-                const relatedTitle = item?.title || `Related video ${index + 1}`;
-                const relatedCreator =
-                  item?.channel_name ||
-                  item?.creator_name ||
-                  item?.channel?.name ||
-                  'Creator';
-                const relatedViews = item?.views || item?.views_count || 0;
-                const thumb = item?.thumbnail_url || '';
-                const relatedVideoId = item?.id || item?.video_id || null;
+            <div className="watch-related-list">
+              {featuredAds.length ? (
+                featuredAds.map((item, index) => {
+                  const title = item?.ad_title || item?.campaign_title || `Featured Ad ${index + 1}`;
+                  const campaignTitle = item?.campaign_title || 'Sponsored';
+                  const impressions = Number(item?.total_impressions || 0);
+                  const thumb = item?.thumbnail_key || '';
 
-                return (
-                  <a
-                    href={relatedSlug ? `/watch/${relatedSlug}` : '/watch'}
-                    className="watch-related-item"
-                    key={item?.id || index}
-                    onClick={(event) =>
-                      handleRelatedVideoClick(event, relatedVideoId, relatedSlug)
-                    }
-                  >
-                    <div
-                      className={`watch-related-thumb ${thumb ? 'has-image' : ''}`}
-                      style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
+                  return (
+                    <button
+                      type="button"
+                      className="watch-related-item watch-featured-ad-item"
+                      key={`${item?.campaign_id || 'campaign'}-${item?.ad_video_id || index}`}
+                      onClick={() => handleFeaturedAdClick(item)}
                     >
-                      {!thumb ? 'Related' : null}
-                    </div>
+                      <div
+                        className={`watch-related-thumb ${thumb ? 'has-image' : ''}`}
+                        style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
+                      >
+                        {!thumb ? 'Ad' : null}
+                      </div>
 
-                    <div className="watch-related-info">
-                      <h4>{relatedTitle}</h4>
-                      <p>{relatedCreator}</p>
-                      <p>{Number(relatedViews || 0).toLocaleString()} views</p>
-                    </div>
-                  </a>
-                );
-              })
-            ) : (
-              <div className="watch-related-empty">No related videos available.</div>
-            )}
-          </div>
+                      <div className="watch-related-info">
+                        <span className="watch-featured-ad-badge">Featured Ad</span>
+                        <h4>{title}</h4>
+                        <p>{campaignTitle}</p>
+                        <p>{impressions.toLocaleString()} impressions</p>
+                      </div>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="watch-related-empty">No featured ads available.</div>
+              )}
+            </div>
+          </section>
+
+          <section className="watch-sidebar-block watch-related-section">
+            <h3 className="watch-sidebar-title">Related Videos</h3>
+
+            <div className="watch-related-list">
+              {relatedVideos.length ? (
+                relatedVideos.map((item, index) => {
+                  const relatedSlug = item?.slug || item?.video_slug || '';
+                  const relatedTitle = item?.title || `Related video ${index + 1}`;
+                  const relatedCreator =
+                    item?.channel_name ||
+                    item?.creator_name ||
+                    item?.channel?.name ||
+                    'Creator';
+                  const relatedViews = item?.views || item?.views_count || 0;
+                  const thumb = item?.thumbnail_url || '';
+                  const relatedVideoId = item?.id || item?.video_id || null;
+
+                  return (
+                    <a
+                      href={relatedSlug ? `/watch/${relatedSlug}` : '/watch'}
+                      className="watch-related-item"
+                      key={item?.id || index}
+                      onClick={(event) =>
+                        handleRelatedVideoClick(event, relatedVideoId, relatedSlug)
+                      }
+                    >
+                      <div
+                        className={`watch-related-thumb ${thumb ? 'has-image' : ''}`}
+                        style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
+                      >
+                        {!thumb ? 'Related' : null}
+                      </div>
+
+                      <div className="watch-related-info">
+                        <h4>{relatedTitle}</h4>
+                        <p>{relatedCreator}</p>
+                        <p>{Number(relatedViews || 0).toLocaleString()} views</p>
+                      </div>
+                    </a>
+                  );
+                })
+              ) : (
+                <div className="watch-related-empty">No related videos available.</div>
+              )}
+            </div>
+          </section>
         </aside>
       </div>
     </div>
