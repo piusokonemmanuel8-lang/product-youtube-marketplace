@@ -13,6 +13,7 @@ import UploadVideoPage from './pages/UploadVideoPage';
 import MyVideosPage from './pages/MyVideosPage';
 import CreatorAnalyticsPage from './pages/CreatorAnalyticsPage';
 import CreatorAdsPage from './pages/CreatorAdsPage';
+import CreatorAdsAnalyticsPage from './pages/CreatorAdsAnalyticsPage';
 import CreatorEarningsPage from './pages/CreatorEarningsPage';
 import CreatorPayoutPage from './pages/CreatorPayoutPage';
 import CreatorMarketplaceAuthPage from './pages/CreatorMarketplaceAuthPage';
@@ -93,6 +94,10 @@ function App() {
 
   if (path === '/creator-ads') {
     return <CreatorAdsPage />;
+  }
+
+  if (path === '/creator-ads-analytics') {
+    return <CreatorAdsAnalyticsPage />;
   }
 
   if (path === '/creator-earnings') {

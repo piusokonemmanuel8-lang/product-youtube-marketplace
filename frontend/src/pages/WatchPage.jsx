@@ -471,7 +471,9 @@ function WatchPage() {
 
     const playVideo = async () => {
       try {
-        videoRef.current.muted = true;
+        videoRef.current.muted = false;
+        videoRef.current.defaultMuted = false;
+        videoRef.current.volume = 1;
         await videoRef.current.play();
       } catch (error) {}
     };
@@ -484,14 +486,12 @@ function WatchPage() {
 
     const playAdVideo = async () => {
       try {
-        adVideoRef.current.muted = false;
-        await adVideoRef.current.play();
-      } catch (error) {
-        try {
-          adVideoRef.current.muted = true;
-          await adVideoRef.current.play();
-        } catch (nestedError) {}
-      }
+        const player = adVideoRef.current;
+        player.muted = true;
+        player.defaultMuted = true;
+        player.volume = 0;
+        await player.play();
+      } catch (error) {}
     };
 
     playAdVideo();
@@ -799,11 +799,14 @@ function WatchPage() {
                 }}
               >
                 <video
+                  key={adData.ad_video_id}
                   ref={adVideoRef}
                   className="watch-real-video"
                   controls
                   autoPlay
+                  muted
                   playsInline
+                  preload="auto"
                   src={adData.video_key}
                   poster={adData.thumbnail_key || ''}
                   onEnded={finishAdPlayback}
@@ -917,10 +920,24 @@ function WatchPage() {
                 className="watch-real-video"
                 controls
                 autoPlay
-                muted
                 playsInline
+                preload="auto"
                 src={video.video_url}
                 poster={video?.thumbnail_url || ''}
+                onLoadedMetadata={() => {
+                  if (!videoRef.current) return;
+                  videoRef.current.muted = false;
+                  videoRef.current.defaultMuted = false;
+                  videoRef.current.volume = 1;
+                  videoRef.current.play().catch(() => {});
+                }}
+                onCanPlay={() => {
+                  if (!videoRef.current) return;
+                  videoRef.current.muted = false;
+                  videoRef.current.defaultMuted = false;
+                  videoRef.current.volume = 1;
+                  videoRef.current.play().catch(() => {});
+                }}
               />
             ) : (
               <div className="watch-player-screen">

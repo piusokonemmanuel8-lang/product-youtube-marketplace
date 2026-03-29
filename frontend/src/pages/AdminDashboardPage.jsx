@@ -81,6 +81,49 @@ function normalizeAdVideo(adVideo, index = 0) {
   };
 }
 
+function getCampaignRuntimeStatus(campaign) {
+  const baseStatus = String(campaign?.status || '').toLowerCase();
+  const now = Date.now();
+
+  if (baseStatus === 'paused') return 'paused';
+  if (baseStatus === 'draft' || baseStatus === 'pending') return 'pending';
+  if (baseStatus === 'rejected' || baseStatus === 'declined') return 'rejected';
+
+  const startsAt = campaign?.starts_at ? new Date(campaign.starts_at).getTime() : null;
+  const endsAt = campaign?.ends_at ? new Date(campaign.ends_at).getTime() : null;
+
+  if (endsAt && !Number.isNaN(endsAt) && endsAt < now) {
+    return 'ended';
+  }
+
+  if (startsAt && !Number.isNaN(startsAt) && startsAt > now) {
+    return 'scheduled';
+  }
+
+  if (baseStatus === 'active') {
+    return 'running';
+  }
+
+  return baseStatus || 'unknown';
+}
+
+function campaignMatchesFilter(campaign, filterValue) {
+  if (!filterValue || filterValue === 'all') return true;
+
+  const dbStatus = String(campaign?.status || '').toLowerCase();
+  const runtimeStatus = getCampaignRuntimeStatus(campaign);
+
+  if (filterValue === 'approved') {
+    return dbStatus === 'active';
+  }
+
+  if (filterValue === 'still-running') {
+    return runtimeStatus === 'running';
+  }
+
+  return runtimeStatus === filterValue || dbStatus === filterValue;
+}
+
 function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
@@ -90,6 +133,7 @@ function AdminDashboardPage() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [adsStatusFilter, setAdsStatusFilter] = useState('all');
 
   const [me, setMe] = useState(null);
   const [videos, setVideos] = useState([]);
@@ -345,36 +389,46 @@ function AdminDashboardPage() {
 
   const filteredAdCampaigns = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    const source = pendingAdCampaigns.length ? pendingAdCampaigns : adCampaigns;
-
-    if (!term) return source;
+    const source = adCampaigns;
 
     return source.filter((campaign) => {
-      return (
+      const matchesSearch =
+        !term ||
         String(campaign?.title || '').toLowerCase().includes(term) ||
         String(campaign?.advertiser_name || '').toLowerCase().includes(term) ||
         String(campaign?.advertiser_email || '').toLowerCase().includes(term) ||
         String(campaign?.status || '').toLowerCase().includes(term) ||
-        String(campaign?.destination_url || '').toLowerCase().includes(term)
-      );
+        String(campaign?.destination_url || '').toLowerCase().includes(term) ||
+        String(getCampaignRuntimeStatus(campaign)).toLowerCase().includes(term);
+
+      const matchesStatus = campaignMatchesFilter(campaign, adsStatusFilter);
+
+      return matchesSearch && matchesStatus;
     });
-  }, [adCampaigns, pendingAdCampaigns, searchTerm]);
+  }, [adCampaigns, searchTerm, adsStatusFilter]);
 
   const filteredAdVideos = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    const source = pendingAdVideos.length ? pendingAdVideos : adVideos;
-
-    if (!term) return source;
+    const source = adVideos;
 
     return source.filter((adVideo) => {
-      return (
+      const matchesSearch =
+        !term ||
         String(adVideo?.title || '').toLowerCase().includes(term) ||
         String(adVideo?.campaign_title || '').toLowerCase().includes(term) ||
         String(adVideo?.advertiser_name || '').toLowerCase().includes(term) ||
-        String(adVideo?.status || '').toLowerCase().includes(term)
-      );
+        String(adVideo?.status || '').toLowerCase().includes(term);
+
+      if (adsStatusFilter === 'all') return matchesSearch;
+      if (adsStatusFilter === 'pending') {
+        return matchesSearch && String(adVideo?.status || '').toLowerCase() === 'pending';
+      }
+      if (adsStatusFilter === 'approved') {
+        return matchesSearch && String(adVideo?.status || '').toLowerCase() === 'approved';
+      }
+      return matchesSearch;
     });
-  }, [adVideos, pendingAdVideos, searchTerm]);
+  }, [adVideos, searchTerm, adsStatusFilter]);
 
   const overviewCards = useMemo(() => {
     const pendingQueue = mergedPendingItems.length;
@@ -391,6 +445,18 @@ function AdminDashboardPage() {
       (report) => String(report?.status).toLowerCase() === 'pending'
     ).length;
 
+    const pausedCampaigns = adCampaigns.filter(
+      (campaign) => getCampaignRuntimeStatus(campaign) === 'paused'
+    ).length;
+
+    const runningCampaigns = adCampaigns.filter(
+      (campaign) => getCampaignRuntimeStatus(campaign) === 'running'
+    ).length;
+
+    const endedCampaigns = adCampaigns.filter(
+      (campaign) => getCampaignRuntimeStatus(campaign) === 'ended'
+    ).length;
+
     return [
       { label: 'All Videos', value: videos.length },
       { label: 'Pending Video Reviews', value: pendingQueue },
@@ -401,9 +467,12 @@ function AdminDashboardPage() {
       { label: 'Categories', value: categories.length },
       { label: 'External Plans', value: plans.length },
       { label: 'Ad Campaigns', value: adCampaigns.length },
-      { label: 'Pending Ad Campaigns', value: pendingAdCampaigns.length || filteredAdCampaigns.length },
+      { label: 'Pending Ad Campaigns', value: pendingAdCampaigns.length },
+      { label: 'Running Ad Campaigns', value: runningCampaigns },
+      { label: 'Paused Ad Campaigns', value: pausedCampaigns },
+      { label: 'Ended Ad Campaigns', value: endedCampaigns },
       { label: 'Ad Videos', value: adVideos.length },
-      { label: 'Pending Ad Videos', value: pendingAdVideos.length || filteredAdVideos.length },
+      { label: 'Pending Ad Videos', value: pendingAdVideos.length },
     ];
   }, [
     videos,
@@ -416,8 +485,6 @@ function AdminDashboardPage() {
     pendingAdCampaigns,
     adVideos,
     pendingAdVideos,
-    filteredAdCampaigns.length,
-    filteredAdVideos.length,
   ]);
 
   async function handleApproveVideo(video) {
@@ -759,11 +826,65 @@ function AdminDashboardPage() {
       await adminService.approveAdCampaign(campaignId);
       setSuccessMessage('Ad campaign approved');
       if (!campaignIdOverride) {
-        setAdTools((prev) => ({ ...prev, campaignId: campaignId }));
+        setAdTools((prev) => ({ ...prev, campaignId }));
       }
       await loadAll();
     } catch (err) {
       setError(err.message || 'Campaign approval failed');
+    } finally {
+      setActionLoadingId('');
+    }
+  }
+
+  async function handlePauseCampaign(campaignIdOverride = '') {
+    const campaignId = campaignIdOverride || adTools.campaignId;
+
+    if (!campaignId) {
+      setError('Enter a campaign ID');
+      return;
+    }
+
+    const actionId = `pause-campaign-${campaignId}`;
+    setActionLoadingId(actionId);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      await adminService.pauseAdCampaign(campaignId);
+      setSuccessMessage('Ad campaign paused');
+      if (!campaignIdOverride) {
+        setAdTools((prev) => ({ ...prev, campaignId }));
+      }
+      await loadAll();
+    } catch (err) {
+      setError(err.message || 'Campaign pause failed');
+    } finally {
+      setActionLoadingId('');
+    }
+  }
+
+  async function handleDeleteCampaign(campaignIdOverride = '') {
+    const campaignId = campaignIdOverride || adTools.campaignId;
+
+    if (!campaignId) {
+      setError('Enter a campaign ID');
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete campaign ${campaignId}?`);
+    if (!confirmed) return;
+
+    const actionId = `delete-campaign-${campaignId}`;
+    setActionLoadingId(actionId);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      await adminService.deleteAdCampaign(campaignId);
+      setSuccessMessage('Ad campaign deleted');
+      await loadAll();
+    } catch (err) {
+      setError(err.message || 'Campaign delete failed');
     } finally {
       setActionLoadingId('');
     }
@@ -851,9 +972,11 @@ function AdminDashboardPage() {
 - Reports moderation
 - Categories create, edit, delete
 - External posting plans list
-- Ad campaigns list + pending list
+- Ad campaigns list + filters
 - Ad videos list + pending list
 - Approve ad campaign
+- Pause ad campaign
+- Delete ad campaign
 - Approve ad video
 - Campaign stats lookup by ID`}
             </pre>
@@ -1456,6 +1579,23 @@ function AdminDashboardPage() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
+
+          <select
+            className="admin-input"
+            style={{ maxWidth: 220 }}
+            value={adsStatusFilter}
+            onChange={(e) => setAdsStatusFilter(e.target.value)}
+          >
+            <option value="all">All Ads</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="running">Still Running</option>
+            <option value="paused">Paused</option>
+            <option value="ended">Ended</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="rejected">Rejected</option>
+          </select>
+
           <button className="admin-btn secondary" onClick={loadAll}>
             Refresh
           </button>
@@ -1463,7 +1603,7 @@ function AdminDashboardPage() {
 
         <div className="admin-panels-grid">
           <div className="admin-panel">
-            <h3>Approve Ad Campaign</h3>
+            <h3>Ad Campaign Controls</h3>
             <input
               className="admin-input"
               name="campaignId"
@@ -1478,6 +1618,20 @@ function AdminDashboardPage() {
                 onClick={() => handleApproveCampaign()}
               >
                 Approve Campaign
+              </button>
+              <button
+                className="admin-btn warning"
+                disabled={actionLoadingId === `pause-campaign-${adTools.campaignId}`}
+                onClick={() => handlePauseCampaign()}
+              >
+                Pause Campaign
+              </button>
+              <button
+                className="admin-btn danger"
+                disabled={actionLoadingId === `delete-campaign-${adTools.campaignId}`}
+                onClick={() => handleDeleteCampaign()}
+              >
+                Delete Campaign
               </button>
             </div>
           </div>
@@ -1543,6 +1697,8 @@ Admin side
 - GET /api/ads/campaigns
 - GET /api/ads/campaigns/pending
 - PUT /api/ads/campaigns/:id/approve
+- PUT /api/ads/campaigns/:id/pause
+- DELETE /api/ads/campaigns/:id
 - GET /api/ads/videos
 - GET /api/ads/videos/pending
 - PUT /api/ads/videos/:id/approve
@@ -1565,7 +1721,9 @@ Performance
                 <th>Title</th>
                 <th>Destination</th>
                 <th>Budget</th>
-                <th>Status</th>
+                <th>Skip</th>
+                <th>DB Status</th>
+                <th>Live Status</th>
                 <th>Dates</th>
                 <th>Actions</th>
               </tr>
@@ -1573,7 +1731,7 @@ Performance
             <tbody>
               {filteredAdCampaigns.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="admin-empty">No submitted ad campaigns found</td>
+                  <td colSpan="10" className="admin-empty">No ad campaigns found</td>
                 </tr>
               ) : (
                 filteredAdCampaigns.map((campaign) => (
@@ -1589,9 +1747,15 @@ Performance
                     </td>
                     <td>{campaign.destination_url || '—'}</td>
                     <td>₦{formatMoney(campaign.budget)}</td>
+                    <td>{formatCount(campaign.skip_after_seconds)}s</td>
                     <td>
                       <span className={`admin-badge ${getStatusClass(campaign.status)}`}>
                         {campaign.status}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`admin-badge ${getStatusClass(getCampaignRuntimeStatus(campaign))}`}>
+                        {getCampaignRuntimeStatus(campaign)}
                       </span>
                     </td>
                     <td>
@@ -1606,6 +1770,20 @@ Performance
                           onClick={() => handleApproveCampaign(campaign.id)}
                         >
                           Approve
+                        </button>
+                        <button
+                          className="admin-btn warning"
+                          disabled={actionLoadingId === `pause-campaign-${campaign.id}`}
+                          onClick={() => handlePauseCampaign(campaign.id)}
+                        >
+                          Pause
+                        </button>
+                        <button
+                          className="admin-btn danger"
+                          disabled={actionLoadingId === `delete-campaign-${campaign.id}`}
+                          onClick={() => handleDeleteCampaign(campaign.id)}
+                        >
+                          Delete
                         </button>
                         <button
                           className="admin-btn secondary"
@@ -1645,7 +1823,7 @@ Performance
             <tbody>
               {filteredAdVideos.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="admin-empty">No submitted ad videos found</td>
+                  <td colSpan="8" className="admin-empty">No ad videos found</td>
                 </tr>
               ) : (
                 filteredAdVideos.map((adVideo) => (
@@ -1761,6 +1939,9 @@ Performance
               className={`admin-nav-item ${activeTab === tab.key ? 'active' : ''}`}
               onClick={() => {
                 setSearchTerm('');
+                if (tab.key !== 'ads') {
+                  setAdsStatusFilter('all');
+                }
                 setActiveTab(tab.key);
               }}
             >

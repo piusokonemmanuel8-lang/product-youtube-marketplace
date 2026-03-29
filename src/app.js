@@ -2,6 +2,8 @@ console.log('LOADED APP FILE FROM SRC/APP.JS');
 
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 
 const authRoutes = require('./routes/authRoutes');
 const channelRoutes = require('./routes/channelRoutes');
@@ -99,6 +101,18 @@ app.use(
 );
 
 app.use(express.json());
+
+const uploadCandidates = [
+  path.join(__dirname, '../uploads'),
+  path.join(__dirname, 'uploads'),
+  path.join(process.cwd(), 'uploads'),
+];
+
+const uploadsDir = uploadCandidates.find((dir) => fs.existsSync(dir)) || uploadCandidates[0];
+
+console.log('STATIC UPLOADS DIR =>', uploadsDir);
+
+app.use('/uploads', express.static(uploadsDir));
 
 app.get('/', (req, res) => {
   res.json({

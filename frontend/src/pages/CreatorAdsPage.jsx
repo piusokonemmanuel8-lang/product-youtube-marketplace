@@ -32,6 +32,13 @@ function formatMoney(value) {
   return amount.toLocaleString();
 }
 
+function isBlockedVideo(video) {
+  const rawKey = String(video?.video_key || '').trim();
+  if (!rawKey) return true;
+  if (/\/watch\//i.test(rawKey)) return true;
+  return false;
+}
+
 function CreatorAdsPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [channel, setChannel] = useState(null);
@@ -61,6 +68,7 @@ function CreatorAdsPage() {
     start_date: '',
     end_date: '',
     objective: 'views',
+    skip_after_seconds: '10',
   });
 
   const [adVideoForm, setAdVideoForm] = useState({
@@ -68,9 +76,7 @@ function CreatorAdsPage() {
     video_id: '',
     ad_video_title: '',
     ad_video_description: '',
-    ad_video_url: '',
-    ad_thumbnail_url: '',
-    ad_duration_seconds: '',
+    ad_duration_seconds: '15',
   });
 
   const [statsCampaignId, setStatsCampaignId] = useState('');
@@ -109,18 +115,41 @@ function CreatorAdsPage() {
   const hasChannel = !!(channel?.id || channel?.channel_name || channel?.name);
 
   const usableVideos = useMemo(() => {
-    return videos.map((video, index) => ({
-      id: video?.id || index + 1,
-      title: video?.title || `Video ${index + 1}`,
-      status: video?.status || video?.moderation_status || 'unknown',
-      views: Number(video?.views_count || video?.views || 0),
-      thumbnail:
-        video?.thumbnail_url ||
-        video?.thumbnail ||
-        video?.cover_image ||
-        '',
-    }));
+    return videos
+      .map((video, index) => ({
+        id: video?.id || index + 1,
+        title: video?.title || `Video ${index + 1}`,
+        status: video?.status || video?.moderation_status || 'unknown',
+        views: Number(video?.views_count || video?.views || 0),
+        duration_seconds: Number(video?.duration_seconds || 0),
+        thumbnail:
+          video?.thumbnail_url ||
+          video?.thumbnail ||
+          video?.cover_image ||
+          '',
+        video_key: video?.video_key || '',
+        blocked: isBlockedVideo(video),
+      }))
+      .filter((video) => !video.blocked);
   }, [videos]);
+
+  useEffect(() => {
+    if (!campaignForm.video_id && usableVideos.length) {
+      setCampaignForm((prev) => ({
+        ...prev,
+        video_id: String(usableVideos[0].id),
+      }));
+    }
+
+    if (!adVideoForm.video_id && usableVideos.length) {
+      setAdVideoForm((prev) => ({
+        ...prev,
+        video_id: String(usableVideos[0].id),
+        ad_video_title: prev.ad_video_title || usableVideos[0].title,
+        ad_duration_seconds: '15',
+      }));
+    }
+  }, [usableVideos, campaignForm.video_id, adVideoForm.video_id, adVideoForm.ad_video_title]);
 
   function handleCampaignChange(event) {
     const { name, value } = event.target;
@@ -130,6 +159,20 @@ function CreatorAdsPage() {
   function handleAdVideoChange(event) {
     const { name, value } = event.target;
     setAdVideoForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function handleUseVideo(video) {
+    setCampaignForm((prev) => ({
+      ...prev,
+      video_id: String(video.id),
+    }));
+
+    setAdVideoForm((prev) => ({
+      ...prev,
+      video_id: String(video.id),
+      ad_video_title: prev.ad_video_title || video.title,
+      ad_duration_seconds: '15',
+    }));
   }
 
   async function handleCreateCampaign(event) {
@@ -173,7 +216,11 @@ function CreatorAdsPage() {
     setAdVideoResponse(null);
 
     try {
-      const response = await creatorAdsService.createAdVideo(adVideoForm);
+      const response = await creatorAdsService.createAdVideo({
+        ...adVideoForm,
+        ad_duration_seconds: '15',
+      });
+
       setAdVideoResponse(response);
       setMessage('Ad video submitted successfully. Waiting for admin approval.');
     } catch (err) {
@@ -286,7 +333,7 @@ function CreatorAdsPage() {
             <div>
               <p className="eyebrow">Creator Ads</p>
               <h1>Create and track your ads</h1>
-              <span>Select a video, submit campaign details, then monitor performance after approval.</span>
+              <span>Select a channel video and submit your campaign.</span>
             </div>
           </div>
         </header>
@@ -302,6 +349,13 @@ function CreatorAdsPage() {
             <strong>{message}</strong>
           </div>
         ) : null}
+
+        <div className="videogad-panel" style={{ marginBottom: 16 }}>
+          <strong>Usable videos for ads: {usableVideos.length}</strong>
+          <div style={{ marginTop: 8, opacity: 0.9 }}>
+            Only obvious broken watch-page links are hidden here. Backend will do the final validation.
+          </div>
+        </div>
 
         <section className="videogad-stats-grid">
           <div className="videogad-stat-card">
@@ -461,6 +515,17 @@ function CreatorAdsPage() {
                 />
               </div>
 
+              <input
+                className="admin-input"
+                name="skip_after_seconds"
+                placeholder="Skip button after seconds"
+                type="number"
+                min="3"
+                value={campaignForm.skip_after_seconds}
+                onChange={handleCampaignChange}
+                required
+              />
+
               <textarea
                 className="admin-input admin-textarea"
                 name="payment_note"
@@ -469,11 +534,15 @@ function CreatorAdsPage() {
                 onChange={handleCampaignChange}
               />
 
+              <div className="videogad-panel" style={{ padding: 12, marginTop: 4 }}>
+                <strong>Note:</strong> Minimum skip time is 3 seconds. The ad keeps playing until the viewer clicks Skip.
+              </div>
+
               <div className="admin-actions">
                 <button
                   className="admin-btn success"
                   type="submit"
-                  disabled={submittingCampaign}
+                  disabled={submittingCampaign || !usableVideos.length}
                 >
                   {submittingCampaign ? 'Submitting...' : 'Submit Campaign'}
                 </button>
@@ -483,12 +552,12 @@ function CreatorAdsPage() {
 
           <div className="videogad-panel">
             <div className="panel-head">
-              <h2>Selected Video List</h2>
+              <h2>Video List</h2>
             </div>
 
             <div className="videogad-video-table">
               {usableVideos.length ? (
-                usableVideos.slice(0, 6).map((video) => (
+                usableVideos.slice(0, 8).map((video) => (
                   <div className="videogad-video-row" key={video.id}>
                     <div className="video-main">
                       {video.thumbnail ? (
@@ -512,10 +581,7 @@ function CreatorAdsPage() {
                       <button
                         className="admin-btn secondary"
                         type="button"
-                        onClick={() => {
-                          setCampaignForm((prev) => ({ ...prev, video_id: String(video.id) }));
-                          setAdVideoForm((prev) => ({ ...prev, video_id: String(video.id) }));
-                        }}
+                        onClick={() => handleUseVideo(video)}
                       >
                         Use Video
                       </button>
@@ -523,7 +589,9 @@ function CreatorAdsPage() {
                   </div>
                 ))
               ) : (
-                <div className="dashboard-empty-box">No creator videos found yet.</div>
+                <div className="dashboard-empty-box">
+                  No usable channel video found yet.
+                </div>
               )}
             </div>
           </div>
@@ -578,36 +646,23 @@ function CreatorAdsPage() {
 
               <input
                 className="admin-input"
-                name="ad_video_url"
-                placeholder="Ad video URL"
-                value={adVideoForm.ad_video_url}
-                onChange={handleAdVideoChange}
-                required
-              />
-
-              <input
-                className="admin-input"
-                name="ad_thumbnail_url"
-                placeholder="Ad thumbnail URL"
-                value={adVideoForm.ad_thumbnail_url}
-                onChange={handleAdVideoChange}
-              />
-
-              <input
-                className="admin-input"
                 name="ad_duration_seconds"
                 placeholder="Ad duration in seconds"
                 type="number"
                 min="1"
-                value={adVideoForm.ad_duration_seconds}
-                onChange={handleAdVideoChange}
+                value="15"
+                readOnly
               />
+
+              <div className="videogad-panel" style={{ padding: 12, marginTop: 4 }}>
+                <strong>Note:</strong> Ad duration is fixed to 15 seconds for delivery stability.
+              </div>
 
               <div className="admin-actions">
                 <button
                   className="admin-btn success"
                   type="submit"
-                  disabled={submittingAdVideo}
+                  disabled={submittingAdVideo || !usableVideos.length}
                 >
                   {submittingAdVideo ? 'Submitting...' : 'Submit Ad Video'}
                 </button>

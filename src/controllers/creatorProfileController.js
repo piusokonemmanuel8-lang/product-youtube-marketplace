@@ -10,6 +10,25 @@ async function createCreatorProfile(req, res) {
     );
 
     if (existingProfiles.length) {
+      const [roleRows] = await pool.query(
+        'SELECT id FROM roles WHERE name = ? LIMIT 1',
+        ['creator']
+      );
+
+      if (roleRows.length) {
+        await pool.query(
+          `INSERT INTO user_roles (user_id, role_id)
+           SELECT ?, ?
+           WHERE NOT EXISTS (
+             SELECT 1
+             FROM user_roles
+             WHERE user_id = ?
+               AND role_id = ?
+           )`,
+          [userId, roleRows[0].id, userId, roleRows[0].id]
+        );
+      }
+
       return res.status(200).json({
         message: 'Creator profile already exists',
         creator_profile: existingProfiles[0],
@@ -20,6 +39,25 @@ async function createCreatorProfile(req, res) {
       'INSERT INTO creator_profiles (user_id) VALUES (?)',
       [userId]
     );
+
+    const [roleRows] = await pool.query(
+      'SELECT id FROM roles WHERE name = ? LIMIT 1',
+      ['creator']
+    );
+
+    if (roleRows.length) {
+      await pool.query(
+        `INSERT INTO user_roles (user_id, role_id)
+         SELECT ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM user_roles
+           WHERE user_id = ?
+             AND role_id = ?
+         )`,
+        [userId, roleRows[0].id, userId, roleRows[0].id]
+      );
+    }
 
     const [profiles] = await pool.query(
       'SELECT * FROM creator_profiles WHERE id = ? LIMIT 1',

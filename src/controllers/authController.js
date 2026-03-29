@@ -15,6 +15,66 @@ function signToken(user) {
   );
 }
 
+async function resolveUserRoles(userId) {
+  const [roleRows] = await pool.query(
+    `SELECT r.name
+     FROM user_roles ur
+     INNER JOIN roles r ON ur.role_id = r.id
+     WHERE ur.user_id = ?`,
+    [userId]
+  );
+
+  const roles = [...new Set(roleRows.map((row) => row.name))];
+
+  const [creatorProfiles] = await pool.query(
+    `SELECT id
+     FROM creator_profiles
+     WHERE user_id = ?
+     LIMIT 1`,
+    [userId]
+  );
+
+  const [channelsByUserId] = await pool.query(
+    `SELECT ch.id
+     FROM channels ch
+     LEFT JOIN creator_profiles cp ON ch.creator_id = cp.id
+     WHERE cp.user_id = ?
+     LIMIT 1`,
+    [userId]
+  );
+
+  const shouldBeCreator = creatorProfiles.length > 0 || channelsByUserId.length > 0;
+
+  if (shouldBeCreator && !roles.includes('creator')) {
+    const [creatorRoleRows] = await pool.query(
+      `SELECT id
+       FROM roles
+       WHERE name = 'creator'
+       LIMIT 1`
+    );
+
+    if (creatorRoleRows.length) {
+      const creatorRoleId = creatorRoleRows[0].id;
+
+      await pool.query(
+        `INSERT INTO user_roles (user_id, role_id)
+         SELECT ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM user_roles
+           WHERE user_id = ?
+             AND role_id = ?
+         )`,
+        [userId, creatorRoleId, userId, creatorRoleId]
+      );
+
+      roles.push('creator');
+    }
+  }
+
+  return [...new Set(roles)];
+}
+
 async function register(req, res) {
   const connection = await pool.getConnection();
 
@@ -163,15 +223,7 @@ async function login(req, res) {
       [user.id]
     );
 
-    const [roleRows] = await pool.query(
-      `SELECT r.name
-       FROM user_roles ur
-       INNER JOIN roles r ON ur.role_id = r.id
-       WHERE ur.user_id = ?`,
-      [user.id]
-    );
-
-    const roles = roleRows.map((row) => row.name);
+    const roles = await resolveUserRoles(user.id);
     const token = signToken(user);
 
     delete user.password_hash;
@@ -206,17 +258,11 @@ async function getMe(req, res) {
       });
     }
 
-    const [roleRows] = await pool.query(
-      `SELECT r.name
-       FROM user_roles ur
-       INNER JOIN roles r ON ur.role_id = r.id
-       WHERE ur.user_id = ?`,
-      [req.user.id]
-    );
+    const roles = await resolveUserRoles(req.user.id);
 
     return res.json({
       user: users[0],
-      roles: roleRows.map((row) => row.name),
+      roles,
     });
   } catch (error) {
     return res.status(500).json({

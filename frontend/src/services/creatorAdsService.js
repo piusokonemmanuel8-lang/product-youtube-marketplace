@@ -18,27 +18,30 @@ const creatorAdsService = {
     return normalizeArray(payload, ['videos', 'items', 'data']);
   },
 
+  async getMyAdCampaigns() {
+    return await api.request('/ads/my-campaigns');
+  },
+
+  async getMyAdVideos() {
+    return await api.request('/ads/my-videos');
+  },
+
   async createAdCampaign(form) {
+    const skipAfterSeconds = Math.max(Number(form.skip_after_seconds || 10), 3);
+
     const payload = {
       advertiser_name: form.advertiser_name,
+      advertiser_email: form.advertiser_email || null,
       title: form.title,
       destination_url: form.destination_url,
-
-      description: form.description,
-      video_id: Number(form.video_id),
-
-      duration_days: Number(form.duration_days || 0),
       budget: Number(form.budget || 0),
-      daily_budget: Number(form.daily_budget || 0),
-
-      payment_reference: form.payment_reference,
-      payment_note: form.payment_note,
-
-      start_date: form.start_date || null,
-      end_date: form.end_date || null,
-
-      objective: form.objective || 'views',
-      status: 'pending',
+      cost_per_view: Number(form.cost_per_view || 0),
+      cost_per_click: Number(form.cost_per_click || 0),
+      max_impressions: Number(form.max_impressions || 0),
+      max_clicks: Number(form.max_clicks || 0),
+      skip_after_seconds: skipAfterSeconds,
+      starts_at: form.start_date || null,
+      ends_at: form.end_date || null,
     };
 
     return await api.request('/ads/campaigns', {
@@ -49,24 +52,10 @@ const creatorAdsService = {
 
   async createAdVideo(form) {
     const payload = {
-      title: form.ad_video_title,
-      name: form.ad_video_title,
-      ad_title: form.ad_video_title,
-
-      description: form.ad_video_description,
-      ad_description: form.ad_video_description,
-
+      campaign_id: Number(form.campaign_id),
       video_id: Number(form.video_id),
-      campaign_id: form.campaign_id ? Number(form.campaign_id) : null,
-
-      video_url: form.ad_video_url,
-      ad_video_url: form.ad_video_url,
-      media_url: form.ad_video_url,
-
-      thumbnail_url: form.ad_thumbnail_url || '',
-      duration_seconds: form.ad_duration_seconds ? Number(form.ad_duration_seconds) : null,
-
-      status: 'pending',
+      title: form.ad_video_title,
+      duration_seconds: form.ad_duration_seconds ? Number(form.ad_duration_seconds) : 0,
     };
 
     return await api.request('/ads/videos', {
@@ -101,7 +90,7 @@ const creatorAdsService = {
   },
 
   async getAdPlayer(videoId) {
-    const query = videoId ? `?videoId=${encodeURIComponent(videoId)}` : '';
+    const query = videoId ? `?video_id=${encodeURIComponent(videoId)}` : '';
     return await api.request(`/ads/player${query}`);
   },
 };

@@ -441,6 +441,19 @@ const adminService = {
     });
   },
 
+  async pauseAdCampaign(campaignId) {
+    return await request(`/api/ads/campaigns/${campaignId}/pause`, {
+      method: 'PUT',
+      body: JSON.stringify({}),
+    });
+  },
+
+  async deleteAdCampaign(campaignId) {
+    return await request(`/api/ads/campaigns/${campaignId}`, {
+      method: 'DELETE',
+    });
+  },
+
   async approveAdVideo(videoId) {
     return await request(`/api/ads/videos/${videoId}/approve`, {
       method: 'PUT',
