@@ -8,16 +8,6 @@ import {
 } from '../services/homeService';
 import './HomePage.css';
 
-const shortsItems = [
-  { id: 1, title: 'Mini Earbuds', views: '2.1K views' },
-  { id: 2, title: 'Phone Case Pick', views: '4.8K views' },
-  { id: 3, title: 'Smart Watch Clip', views: '3.7K views' },
-  { id: 4, title: 'Desk Setup', views: '5.2K views' },
-  { id: 5, title: 'Portable Light', views: '1.9K views' },
-  { id: 6, title: 'Budget Speaker', views: '6.1K views' },
-  { id: 7, title: 'Ring Light', views: '2.7K views' },
-];
-
 function normalizeArrayResponse(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.data)) return data.data;
@@ -49,6 +39,29 @@ function formatViews(value) {
   return `${formatCompactNumber(value)} views`;
 }
 
+function resolveVideoFormat(item) {
+  const directFormat =
+    item?.video_format ||
+    item?.video?.video_format ||
+    item?.saved_video?.video_format ||
+    item?.history_video?.video_format;
+
+  if (directFormat === 'short' || directFormat === 'regular') {
+    return directFormat;
+  }
+
+  const duration =
+    Number(
+      item?.duration_seconds ??
+        item?.video?.duration_seconds ??
+        item?.saved_video?.duration_seconds ??
+        item?.history_video?.duration_seconds ??
+        0
+    ) || 0;
+
+  return duration > 0 && duration <= 60 ? 'short' : 'regular';
+}
+
 function unwrapVideoItem(item) {
   const video = item?.video || item?.saved_video || item?.history_video || item?.item || item || {};
 
@@ -63,6 +76,9 @@ function unwrapVideoItem(item) {
     item?.total_views ??
     0;
 
+  const resolvedDuration = video?.duration_seconds ?? item?.duration_seconds ?? 0;
+  const resolvedVideoFormat = resolveVideoFormat(item);
+
   return {
     ...item,
     ...video,
@@ -72,14 +88,22 @@ function unwrapVideoItem(item) {
     description: video?.description || item?.description,
     thumbnail_url: video?.thumbnail_url || item?.thumbnail_url,
     thumbnail_key: video?.thumbnail_key || item?.thumbnail_key,
+    short_thumbnail_url: video?.short_thumbnail_url || item?.short_thumbnail_url,
+    short_thumbnail_key: video?.short_thumbnail_key || item?.short_thumbnail_key,
     video_url: video?.video_url || item?.video_url,
     buy_now_url: video?.buy_now_url || item?.buy_now_url,
+    buy_now_enabled:
+      video?.buy_now_enabled ??
+      item?.buy_now_enabled ??
+      (video?.buy_now_url || item?.buy_now_url ? 1 : 0),
     published_at: video?.published_at || item?.published_at,
     created_at: video?.created_at || item?.created_at,
     channel_id: video?.channel_id || item?.channel_id,
     channel_name: video?.channel_name || item?.channel_name,
     creator_name: video?.creator_name || item?.creator_name,
     category_name: video?.category_name || item?.category_name,
+    duration_seconds: Number(resolvedDuration || 0),
+    video_format: resolvedVideoFormat,
     views_count: Number(resolvedViews || 0),
     views: Number(resolvedViews || 0),
     total_views: Number(resolvedViews || 0),
@@ -121,11 +145,225 @@ function formatVideoMeta(video) {
   };
 }
 
+function formatShortDuration(secondsValue) {
+  const seconds = Number(secondsValue || 0);
+
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return 'Short';
+  }
+
+  if (seconds < 60) {
+    return `0:${String(seconds).padStart(2, '0')}`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const secondsLeft = seconds % 60;
+
+  return `${minutes}:${String(secondsLeft).padStart(2, '0')}`;
+}
+
+function matchesSearch(video, term) {
+  const query = String(term || '').trim().toLowerCase();
+  if (!query) return true;
+
+  const haystack = [
+    video?.title,
+    video?.description,
+    video?.channel_name,
+    video?.creator_name,
+    video?.category_name,
+    video?.slug,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return haystack.includes(query);
+}
+
+function createRegularPlaceholders(count, startIndex = 0) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `regular-placeholder-${startIndex + index + 1}`,
+    isPlaceholder: true,
+    placeholderTitle: 'Featured Video',
+  }));
+}
+
+function createShortPlaceholders(count, startIndex = 0) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `short-placeholder-${startIndex + index + 1}`,
+    isPlaceholder: true,
+    placeholderTitle: 'Short',
+  }));
+}
+
+function fillWithPlaceholders(items, targetCount, type = 'regular', startIndex = 0) {
+  const safeItems = Array.isArray(items) ? items.slice(0, targetCount) : [];
+  const missing = Math.max(targetCount - safeItems.length, 0);
+
+  if (missing === 0) return safeItems;
+
+  const placeholders =
+    type === 'short'
+      ? createShortPlaceholders(missing, startIndex)
+      : createRegularPlaceholders(missing, startIndex);
+
+  return [...safeItems, ...placeholders];
+}
+
+function VideoCard({ video }) {
+  const isPlaceholder = video?.isPlaceholder === true;
+  const details = formatVideoMeta(video);
+  const cardKey = video?.id || video?.video_id || video?.slug || Math.random().toString(36);
+  const watchUrl = video?.slug ? `/watch/${video.slug}` : '/watch';
+  const thumbnailUrl = video?.thumbnail_url || '';
+
+  if (isPlaceholder) {
+    return (
+      <div className="vg-video-card vg-video-card-link" key={cardKey}>
+        <div className="vg-video-thumb vg-video-thumb-placeholder">
+          {video?.placeholderTitle || 'Featured Video'}
+        </div>
+
+        <div className="vg-video-info">
+          <h3>Coming soon</h3>
+          <div className="vg-creator-name">Marketplace Creator</div>
+          <div className="vg-meta-text">Placeholder slot</div>
+          <div className="vg-meta-text">0 views</div>
+
+          <div className="vg-card-actions">
+            <span className="vg-card-btn">Watch</span>
+            <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <a className="vg-video-card vg-video-card-link" key={cardKey} href={watchUrl}>
+      <div
+        className={`vg-video-thumb ${thumbnailUrl ? 'has-image' : ''}`}
+        style={thumbnailUrl ? { backgroundImage: `url(${thumbnailUrl})` } : undefined}
+      >
+        {!thumbnailUrl ? (video?.thumbnail_key ? 'Video Thumbnail' : 'Featured Video') : null}
+      </div>
+
+      <div className="vg-video-info">
+        <h3>{video?.title || 'Untitled Video'}</h3>
+        <div className="vg-creator-name">{details.creator}</div>
+        <div className="vg-meta-text">{details.meta}</div>
+        <div className="vg-meta-text">{details.viewsText}</div>
+
+        <div className="vg-card-actions">
+          <span className="vg-card-btn">Watch</span>
+
+          {video?.buy_now_enabled == 1 && video?.buy_now_url ? (
+            <span
+              className="vg-card-btn vg-card-btn-light"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                window.open(video.buy_now_url, '_blank', 'noopener,noreferrer');
+              }}
+            >
+              Buy Now
+            </span>
+          ) : (
+            <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
+          )}
+        </div>
+      </div>
+    </a>
+  );
+}
+
+function ShortCard({ video }) {
+  const isPlaceholder = video?.isPlaceholder === true;
+  const cardKey = video?.id || video?.video_id || video?.slug || Math.random().toString(36);
+  const watchUrl = video?.slug ? `/watch/${video.slug}` : '/watch';
+  const thumbnailUrl =
+    video?.short_thumbnail_url ||
+    video?.short_thumbnail_key ||
+    video?.thumbnail_url ||
+    '';
+  const details = formatVideoMeta(video);
+
+  if (isPlaceholder) {
+    return (
+      <div className="vg-short-card" key={cardKey}>
+        <div className="vg-short-thumb vg-short-thumb-placeholder">
+          {video?.placeholderTitle || 'Short'}
+        </div>
+
+        <h4>Coming soon</h4>
+        <p>Placeholder short slot</p>
+
+        <div className="vg-card-actions" style={{ marginTop: '10px' }}>
+          <span className="vg-card-btn">Watch</span>
+          <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <a className="vg-short-card" key={cardKey} href={watchUrl}>
+      <div
+        className={`vg-short-thumb ${thumbnailUrl ? 'has-image' : ''}`}
+        style={thumbnailUrl ? { backgroundImage: `url(${thumbnailUrl})` } : undefined}
+      >
+        {!thumbnailUrl ? 'Short' : null}
+
+        <span
+          style={{
+            position: 'absolute',
+            right: '10px',
+            bottom: '10px',
+            background: 'rgba(0,0,0,0.65)',
+            color: '#fff',
+            borderRadius: '999px',
+            padding: '4px 8px',
+            fontSize: '12px',
+            fontWeight: 700,
+            zIndex: 2,
+          }}
+        >
+          {formatShortDuration(video?.duration_seconds)}
+        </span>
+      </div>
+
+      <h4>{video?.title || 'Untitled Short'}</h4>
+      <p>{details.viewsText}</p>
+
+      <div className="vg-card-actions" style={{ marginTop: '10px' }}>
+        <span className="vg-card-btn">Watch</span>
+
+        {video?.buy_now_enabled == 1 && video?.buy_now_url ? (
+          <span
+            className="vg-card-btn vg-card-btn-light"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              window.open(video.buy_now_url, '_blank', 'noopener,noreferrer');
+            }}
+          >
+            Buy Now
+          </span>
+        ) : (
+          <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
+        )}
+      </div>
+    </a>
+  );
+}
+
 function HomePage() {
   const [categories, setCategories] = useState([]);
   const [categoryTreeCount, setCategoryTreeCount] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [featuredVideos, setFeaturedVideos] = useState([]);
+  const [shortVideos, setShortVideos] = useState([]);
   const [savedVideos, setSavedVideos] = useState([]);
   const [watchHistory, setWatchHistory] = useState([]);
   const [subscriptionVideos, setSubscriptionVideos] = useState([]);
@@ -135,6 +373,7 @@ function HomePage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [theme, setTheme] = useState('light');
   const [me, setMe] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     async function loadHomepageData() {
@@ -142,19 +381,23 @@ function HomePage() {
       setErrorMessage('');
 
       try {
-        const [categoriesResponse, treeResponse, videosResponse] = await Promise.all([
-          getCategories(),
-          getCategoryTree(),
-          getPublicVideos({ limit: 24 }),
-        ]);
+        const [categoriesResponse, treeResponse, videosResponse, shortsResponse] =
+          await Promise.all([
+            getCategories(),
+            getCategoryTree(),
+            getPublicVideos({ limit: 60, video_format: 'regular' }),
+            getPublicVideos({ limit: 24, video_format: 'short' }),
+          ]);
 
         const categoriesList = normalizeArrayResponse(categoriesResponse);
         const treeList = normalizeArrayResponse(treeResponse);
         const publicVideosList = normalizeArrayResponse(videosResponse).map(unwrapVideoItem);
+        const publicShortsList = normalizeArrayResponse(shortsResponse).map(unwrapVideoItem);
 
         setCategories(categoriesList);
         setCategoryTreeCount(treeList.length);
         setFeaturedVideos(publicVideosList);
+        setShortVideos(publicShortsList);
       } catch (error) {
         setErrorMessage(error.message || 'Failed to load homepage data');
       } finally {
@@ -262,36 +505,69 @@ function HomePage() {
     return ['All', ...names.filter(Boolean)];
   }, [categories]);
 
-  const trendingVideos = useMemo(() => {
-    return [...featuredVideos].sort((a, b) => {
-      const aViews = Number(a?.views_count || a?.views || a?.view_count || a?.total_views || 0);
-      const bViews = Number(b?.views_count || b?.views || b?.view_count || b?.total_views || 0);
-      return bViews - aViews;
-    });
+  const regularFeaturedVideos = useMemo(() => {
+    return featuredVideos.filter((video) => resolveVideoFormat(video) === 'regular');
   }, [featuredVideos]);
 
+  const onlyShortVideos = useMemo(() => {
+    return shortVideos.filter((video) => resolveVideoFormat(video) === 'short');
+  }, [shortVideos]);
+
+  const searchedRegularVideos = useMemo(() => {
+    return regularFeaturedVideos.filter((video) => matchesSearch(video, searchTerm));
+  }, [regularFeaturedVideos, searchTerm]);
+
+  const searchedShortVideos = useMemo(() => {
+    return onlyShortVideos.filter((video) => matchesSearch(video, searchTerm));
+  }, [onlyShortVideos, searchTerm]);
+
+  const trendingVideos = useMemo(() => {
+    return [...regularFeaturedVideos]
+      .sort((a, b) => {
+        const aViews = Number(a?.views_count || a?.views || a?.view_count || a?.total_views || 0);
+        const bViews = Number(b?.views_count || b?.views || b?.view_count || b?.total_views || 0);
+        return bViews - aViews;
+      })
+      .filter((video) => matchesSearch(video, searchTerm));
+  }, [regularFeaturedVideos, searchTerm]);
+
   const categoriesVideos = useMemo(() => {
-    if (selectedCategory === 'All') {
-      return featuredVideos;
-    }
+    const source = regularFeaturedVideos;
 
-    return featuredVideos.filter((video) => {
-      const categoryName =
-        video?.category_name ||
-        video?.category ||
-        video?.category_title ||
-        '';
+    const filteredByCategory =
+      selectedCategory === 'All'
+        ? source
+        : source.filter((video) => {
+            const categoryName =
+              video?.category_name ||
+              video?.category ||
+              video?.category_title ||
+              '';
 
-      return String(categoryName).toLowerCase() === String(selectedCategory).toLowerCase();
-    });
-  }, [featuredVideos, selectedCategory]);
+            return String(categoryName).toLowerCase() === String(selectedCategory).toLowerCase();
+          });
+
+    return filteredByCategory.filter((video) => matchesSearch(video, searchTerm));
+  }, [regularFeaturedVideos, selectedCategory, searchTerm]);
 
   const currentVideos = useMemo(() => {
     if (activeMenu === 'Trending') return trendingVideos;
     if (activeMenu === 'Categories') return categoriesVideos;
-    if (activeMenu === 'Saved') return savedVideos;
-    if (activeMenu === 'History') return watchHistory;
-    if (activeMenu === 'Subscriptions') return subscriptionVideos;
+    if (activeMenu === 'Saved') {
+      return savedVideos
+        .filter((video) => resolveVideoFormat(video) === 'regular')
+        .filter((video) => matchesSearch(video, searchTerm));
+    }
+    if (activeMenu === 'History') {
+      return watchHistory
+        .filter((video) => resolveVideoFormat(video) === 'regular')
+        .filter((video) => matchesSearch(video, searchTerm));
+    }
+    if (activeMenu === 'Subscriptions') {
+      return subscriptionVideos
+        .filter((video) => resolveVideoFormat(video) === 'regular')
+        .filter((video) => matchesSearch(video, searchTerm));
+    }
     return categoriesVideos;
   }, [
     activeMenu,
@@ -300,6 +576,7 @@ function HomePage() {
     savedVideos,
     watchHistory,
     subscriptionVideos,
+    searchTerm,
   ]);
 
   const sectionTitle = useMemo(() => {
@@ -331,6 +608,26 @@ function HomePage() {
     me?.email ||
     'My Account';
 
+  const homeTopRegular = useMemo(() => {
+    return fillWithPlaceholders(searchedRegularVideos.slice(0, 6), 6, 'regular', 0);
+  }, [searchedRegularVideos]);
+
+  const homeFirstShortRow = useMemo(() => {
+    return fillWithPlaceholders(searchedShortVideos.slice(0, 6), 6, 'short', 0);
+  }, [searchedShortVideos]);
+
+  const homeMiddleRegular = useMemo(() => {
+    return fillWithPlaceholders(searchedRegularVideos.slice(6, 9), 3, 'regular', 6);
+  }, [searchedRegularVideos]);
+
+  const homeSecondShortRow = useMemo(() => {
+    return fillWithPlaceholders(searchedShortVideos.slice(6, 12), 6, 'short', 6);
+  }, [searchedShortVideos]);
+
+  const homeBottomRegular = useMemo(() => {
+    return fillWithPlaceholders(searchedRegularVideos.slice(9, 15), 6, 'regular', 9);
+  }, [searchedRegularVideos]);
+
   return (
     <div className={`home-layout ${theme === 'dark' ? 'home-layout-dark' : 'home-layout-light'}`}>
       <header className="vg-topbar">
@@ -348,6 +645,8 @@ function HomePage() {
             className="vg-search-input"
             type="text"
             placeholder="Search videos, products, creators"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
@@ -363,12 +662,18 @@ function HomePage() {
           {me ? (
             <>
               <span className="vg-user-pill">{userDisplayName}</span>
-              <a href="/creator-dashboard" className="vg-link-btn vg-link-btn-dark">Account</a>
+              <a href="/creator-dashboard" className="vg-link-btn vg-link-btn-dark">
+                Account
+              </a>
             </>
           ) : (
             <>
-              <a href="/login" className="vg-link-btn">Login</a>
-              <a href="/register" className="vg-link-btn vg-link-btn-dark">Register</a>
+              <a href="/login" className="vg-link-btn">
+                Login
+              </a>
+              <a href="/register" className="vg-link-btn vg-link-btn-dark">
+                Register
+              </a>
             </>
           )}
         </div>
@@ -389,34 +694,38 @@ function HomePage() {
         </aside>
 
         <main className="vg-content">
-          {errorMessage ? (
-            <div className="home-state-message error">{errorMessage}</div>
-          ) : null}
+          {errorMessage ? <div className="home-state-message error">{errorMessage}</div> : null}
 
-          {loading ? (
-            <div className="home-state-message">Loading categories...</div>
-          ) : null}
+          {loading ? <div className="home-state-message">Loading categories...</div> : null}
 
           <section className="vg-home-hero">
             <div className="vg-home-hero-left">
               <span className="vg-badge">Endpoint-first homepage</span>
               <h1>Watch product videos. Discover trusted stores. Buy smarter.</h1>
               <p className="vg-hero-subtitle">
-                A creator-driven video marketplace where buyers can discover products through engaging videos.
-                Categories are now connected to your real backend endpoints.
+                A creator-driven video marketplace where buyers can discover products through
+                engaging videos. Categories are now connected to your real backend endpoints.
               </p>
 
               <div className="vg-hero-actions">
                 {me ? (
-                  <a href="/creator-dashboard" className="vg-primary-btn">Go to Dashboard</a>
+                  <a href="/creator-dashboard" className="vg-primary-btn">
+                    Go to Dashboard
+                  </a>
                 ) : (
-                  <a href="/login" className="vg-primary-btn">Creator Login</a>
+                  <a href="/login" className="vg-primary-btn">
+                    Creator Login
+                  </a>
                 )}
 
                 {me ? (
-                  <a href="/upload-video" className="vg-secondary-btn">Upload Video</a>
+                  <a href="/upload-video" className="vg-secondary-btn">
+                    Upload Video
+                  </a>
                 ) : (
-                  <a href="/register" className="vg-secondary-btn">Join VideoGad</a>
+                  <a href="/register" className="vg-secondary-btn">
+                    Join VideoGad
+                  </a>
                 )}
               </div>
             </div>
@@ -424,7 +733,9 @@ function HomePage() {
             <div className="vg-home-hero-right">
               <div className="vg-stat-card-large">
                 <div className="vg-stat-top">Marketplace activity</div>
-                <div className="vg-stat-big">{formatCompactNumber(featuredVideos.length)}</div>
+                <div className="vg-stat-big">
+                  {formatCompactNumber(regularFeaturedVideos.length + onlyShortVideos.length)}
+                </div>
                 <div className="vg-stat-note">Videos available on the marketplace</div>
               </div>
 
@@ -439,8 +750,10 @@ function HomePage() {
               </div>
 
               <div className="vg-stat-card-small">
-                <div className="vg-stat-small-number">{formatCompactNumber(categoryTreeCount)}</div>
-                <div className="vg-stat-small-label">Category tree roots</div>
+                <div className="vg-stat-small-number">
+                  {formatCompactNumber(onlyShortVideos.length)}
+                </div>
+                <div className="vg-stat-small-label">Shorts loaded</div>
               </div>
             </div>
           </section>
@@ -461,83 +774,86 @@ function HomePage() {
             ))}
           </section>
 
-          <section className="vg-home-section-head">
-            <div>
-              <h2>{sectionTitle}</h2>
-              <p>{sectionLoading ? 'Loading...' : sectionText}</p>
-            </div>
-          </section>
+          {activeMenu === 'Home' ? (
+            <>
+              <section className="vg-home-section-head">
+                <div>
+                  <h2>Featured Videos</h2>
+                  <p>Live videos from the real public feed.</p>
+                </div>
+              </section>
 
-          <section className="vg-video-grid">
-            {currentVideos.length ? (
-              currentVideos.map((video, index) => {
-                const details = formatVideoMeta(video);
-                const cardKey = video?.id || video?.video_id || video?.slug || `video-${index}`;
-                const watchUrl = video?.slug ? `/watch/${video.slug}` : '/watch';
-                const thumbnailUrl = video?.thumbnail_url || '';
+              <section className="vg-video-grid">
+                {homeTopRegular.map((video, index) => (
+                  <VideoCard key={video?.id || `top-regular-${index}`} video={video} />
+                ))}
+              </section>
 
-                return (
-                  <a className="vg-video-card vg-video-card-link" key={cardKey} href={watchUrl}>
-                    <div
-                      className={`vg-video-thumb ${thumbnailUrl ? 'has-image' : ''}`}
-                      style={thumbnailUrl ? { backgroundImage: `url(${thumbnailUrl})` } : undefined}
-                    >
-                      {!thumbnailUrl ? (video?.thumbnail_key ? 'Video Thumbnail' : 'Featured Video') : null}
-                    </div>
+              <section className="vg-home-section-head shorts-head">
+                <div>
+                  <h2>Shorts</h2>
+                  <p>Real short videos from creators.</p>
+                </div>
+              </section>
 
-                    <div className="vg-video-info">
-                      <h3>{video?.title || 'Untitled Video'}</h3>
-                      <div className="vg-creator-name">{details.creator}</div>
-                      <div className="vg-meta-text">{details.meta}</div>
-                      <div className="vg-meta-text">{details.viewsText}</div>
+              <section className="vg-shorts-row vg-shorts-row-six">
+                {homeFirstShortRow.map((video, index) => (
+                  <ShortCard key={video?.id || `short-row-1-${index}`} video={video} />
+                ))}
+              </section>
 
-                      <div className="vg-card-actions">
-                        <span className="vg-card-btn">Watch</span>
+              <section className="vg-video-grid vg-video-grid-three">
+                {homeMiddleRegular.map((video, index) => (
+                  <VideoCard key={video?.id || `middle-regular-${index}`} video={video} />
+                ))}
+              </section>
 
-                        {video?.buy_now_url ? (
-                          <span
-                            className="vg-card-btn vg-card-btn-light"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              window.open(video.buy_now_url, '_blank', 'noopener,noreferrer');
-                            }}
-                          >
-                            Buy Now
-                          </span>
-                        ) : (
-                          <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
-                        )}
-                      </div>
-                    </div>
-                  </a>
-                );
-              })
-            ) : (
-              <div className="home-state-message">
-                {me
-                  ? 'No videos found for this section yet.'
-                  : 'Login to use saved videos, history, and subscriptions.'}
-              </div>
-            )}
-          </section>
+              <section className="vg-home-section-head shorts-head">
+                <div>
+                  <h2>Shorts</h2>
+                  <p>More short videos from creators.</p>
+                </div>
+              </section>
 
-          <section className="vg-home-section-head shorts-head">
-            <div>
-              <h2>Shorts</h2>
-              <p>Quick marketplace clips in a horizontal row.</p>
-            </div>
-          </section>
+              <section className="vg-shorts-row vg-shorts-row-six">
+                {homeSecondShortRow.map((video, index) => (
+                  <ShortCard key={video?.id || `short-row-2-${index}`} video={video} />
+                ))}
+              </section>
 
-          <section className="vg-shorts-row">
-            {shortsItems.map((item) => (
-              <div className="vg-short-card" key={item.id}>
-                <div className="vg-short-thumb">Short</div>
-                <h4>{item.title}</h4>
-                <p>{item.views}</p>
-              </div>
-            ))}
-          </section>
+              <section className="vg-video-grid">
+                {homeBottomRegular.map((video, index) => (
+                  <VideoCard key={video?.id || `bottom-regular-${index}`} video={video} />
+                ))}
+              </section>
+            </>
+          ) : (
+            <>
+              <section className="vg-home-section-head">
+                <div>
+                  <h2>{sectionTitle}</h2>
+                  <p>{sectionLoading ? 'Loading...' : sectionText}</p>
+                </div>
+              </section>
+
+              <section className="vg-video-grid">
+                {currentVideos.length ? (
+                  currentVideos.map((video, index) => (
+                    <VideoCard
+                      key={video?.id || video?.video_id || video?.slug || `video-${index}`}
+                      video={video}
+                    />
+                  ))
+                ) : (
+                  <div className="home-state-message">
+                    {me
+                      ? 'No videos found for this section yet.'
+                      : 'Login to use saved videos, history, and subscriptions.'}
+                  </div>
+                )}
+              </section>
+            </>
+          )}
         </main>
       </div>
     </div>

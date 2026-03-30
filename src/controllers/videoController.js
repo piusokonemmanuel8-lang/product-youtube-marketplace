@@ -48,6 +48,11 @@ function buildMediaUrl(key) {
   return cleanKey;
 }
 
+function resolveVideoFormat(durationSeconds) {
+  const seconds = Number(durationSeconds || 0);
+  return seconds > 0 && seconds <= 60 ? 'short' : 'regular';
+}
+
 function normalizeVideoRow(video) {
   if (!video) return video;
 
@@ -58,14 +63,30 @@ function normalizeVideoRow(video) {
     video.view_count ??
     0;
 
+  const resolvedDuration = Number(video.duration_seconds || 0);
+  const resolvedVideoFormat =
+    video.video_format ||
+    resolveVideoFormat(resolvedDuration);
+
+  const resolvedShortThumbnailKey =
+    video.short_thumbnail_key || null;
+
   return {
     ...video,
     video_url: video.video_url || buildMediaUrl(video.video_key),
     thumbnail_url: video.thumbnail_url || buildMediaUrl(video.thumbnail_key),
+    short_thumbnail_url:
+      video.short_thumbnail_url ||
+      buildMediaUrl(resolvedShortThumbnailKey) ||
+      buildMediaUrl(video.thumbnail_key),
     preview_url: video.preview_url || buildMediaUrl(video.preview_key),
     views_count: Number(resolvedViews || 0),
     total_views: Number(resolvedViews || 0),
     views: Number(resolvedViews || 0),
+    duration_seconds: resolvedDuration,
+    video_format: resolvedVideoFormat,
+    is_short: resolvedVideoFormat === 'short' ? 1 : 0,
+    short_thumbnail_key: resolvedShortThumbnailKey,
     uses_external_link: Number(video.uses_external_link || 0),
     external_link_subscription_required: Number(video.external_link_subscription_required || 0),
   };
@@ -369,6 +390,7 @@ async function createVideo(req, res) {
       video_key,
       stream_key,
       thumbnail_key,
+      short_thumbnail_key,
       preview_key,
       duration_seconds,
       visibility,
@@ -390,8 +412,16 @@ async function createVideo(req, res) {
       });
     }
 
+    if (!short_thumbnail_key) {
+      return res.status(400).json({
+        message: 'Short thumbnail is required',
+      });
+    }
+
     const cleanSlug = slug.trim().toLowerCase();
     const cleanBuyNowUrl = normalizeBuyNowUrl(buy_now_url);
+    const finalDurationSeconds = Number(duration_seconds || 0);
+    const finalVideoFormat = resolveVideoFormat(finalDurationSeconds);
 
     if (buy_now_enabled == 1 && cleanBuyNowUrl === null) {
       return res.status(400).json({
@@ -473,11 +503,13 @@ async function createVideo(req, res) {
         slug,
         description,
         video_type,
+        video_format,
         source_type,
         storage_provider,
         video_key,
         stream_key,
         thumbnail_key,
+        short_thumbnail_key,
         preview_key,
         duration_seconds,
         visibility,
@@ -490,7 +522,7 @@ async function createVideo(req, res) {
         external_link_subscription_required,
         is_monetized
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         videoUuid,
         creatorProfile.id,
@@ -500,13 +532,15 @@ async function createVideo(req, res) {
         cleanSlug,
         description || null,
         video_type || 'long',
+        finalVideoFormat,
         source_type || 'uploaded',
         storage_provider || 's3',
         video_key || null,
         stream_key || null,
         thumbnail_key || null,
+        short_thumbnail_key || null,
         preview_key || null,
-        duration_seconds || 0,
+        finalDurationSeconds,
         visibility || 'public',
         'draft',
         'pending',
@@ -587,9 +621,12 @@ async function getMyVideos(req, res) {
 async function getPublicVideos(req, res) {
   try {
     const limit = Number(req.query.limit) > 0 ? Number(req.query.limit) : 24;
+    const videoFormat = req.query.video_format
+      ? String(req.query.video_format).trim().toLowerCase()
+      : '';
 
-    const [videos] = await pool.query(
-      `SELECT
+    let sql = `
+      SELECT
         v.id,
         v.uuid,
         v.creator_id,
@@ -599,11 +636,13 @@ async function getPublicVideos(req, res) {
         v.slug,
         v.description,
         v.video_type,
+        v.video_format,
         v.source_type,
         v.storage_provider,
         v.video_key,
         v.stream_key,
         v.thumbnail_key,
+        v.short_thumbnail_key,
         v.preview_key,
         v.duration_seconds,
         v.visibility,
@@ -634,13 +673,25 @@ async function getPublicVideos(req, res) {
        WHERE v.visibility = 'public'
          AND v.status = 'published'
          AND v.moderation_status = 'approved'
+    `;
+
+    const params = [];
+
+    if (videoFormat === 'short' || videoFormat === 'regular') {
+      sql += ' AND COALESCE(v.video_format, CASE WHEN COALESCE(v.duration_seconds, 0) <= 60 AND COALESCE(v.duration_seconds, 0) > 0 THEN \'short\' ELSE \'regular\' END) = ?';
+      params.push(videoFormat);
+    }
+
+    sql += `
        ORDER BY COALESCE(v.published_at, v.created_at) DESC, v.id DESC
-       LIMIT ?`,
-      [limit]
-    );
+       LIMIT ?
+    `;
+    params.push(limit);
+
+    const [videos] = await pool.query(sql, params);
 
     return res.status(200).json({
-      videos: videos.map((video) => ({
+      videos: videos.map((video) => normalizeVideoRow({
         id: video.id,
         uuid: video.uuid,
         creator_id: video.creator_id,
@@ -650,11 +701,13 @@ async function getPublicVideos(req, res) {
         slug: video.slug,
         description: video.description,
         video_type: video.video_type,
+        video_format: video.video_format,
         source_type: video.source_type,
         storage_provider: video.storage_provider,
         video_key: video.video_key,
         stream_key: video.stream_key,
         thumbnail_key: video.thumbnail_key,
+        short_thumbnail_key: video.short_thumbnail_key,
         preview_key: video.preview_key,
         duration_seconds: video.duration_seconds,
         visibility: video.visibility,
@@ -676,6 +729,9 @@ async function getPublicVideos(req, res) {
         channel_slug: video.channel_slug,
         video_url: buildMediaUrl(video.video_key),
         thumbnail_url: buildMediaUrl(video.thumbnail_key),
+        short_thumbnail_url:
+          buildMediaUrl(video.short_thumbnail_key) ||
+          buildMediaUrl(video.thumbnail_key),
         preview_url: buildMediaUrl(video.preview_key),
         views_count: Number(video.views_count || 0),
         total_views: Number(video.views_count || 0),
@@ -695,6 +751,9 @@ async function getAdminVideos(req, res) {
     const status = req.query.status ? String(req.query.status).trim() : '';
     const moderationStatus = req.query.moderation_status
       ? String(req.query.moderation_status).trim()
+      : '';
+    const videoFormat = req.query.video_format
+      ? String(req.query.video_format).trim().toLowerCase()
       : '';
     const limit = Number(req.query.limit) > 0 ? Number(req.query.limit) : 100;
 
@@ -719,6 +778,11 @@ async function getAdminVideos(req, res) {
     if (moderationStatus) {
       sql += ' AND v.moderation_status = ?';
       params.push(moderationStatus);
+    }
+
+    if (videoFormat === 'short' || videoFormat === 'regular') {
+      sql += ' AND COALESCE(v.video_format, CASE WHEN COALESCE(v.duration_seconds, 0) <= 60 AND COALESCE(v.duration_seconds, 0) > 0 THEN \'short\' ELSE \'regular\' END) = ?';
+      params.push(videoFormat);
     }
 
     sql += `
@@ -902,6 +966,7 @@ async function updateMyVideo(req, res) {
       video_key,
       stream_key,
       thumbnail_key,
+      short_thumbnail_key,
       preview_key,
       duration_seconds,
       visibility,
@@ -1018,6 +1083,24 @@ async function updateMyVideo(req, res) {
       externalPlanSubscription = planCheck.subscription;
     }
 
+    const finalDurationSeconds =
+      duration_seconds !== undefined
+        ? Number(duration_seconds || 0)
+        : Number(currentVideo.duration_seconds || 0);
+
+    const finalVideoFormat = resolveVideoFormat(finalDurationSeconds);
+
+    const finalShortThumbnailKey =
+      short_thumbnail_key !== undefined
+        ? short_thumbnail_key
+        : currentVideo.short_thumbnail_key;
+
+    if (!finalShortThumbnailKey) {
+      return res.status(400).json({
+        message: 'Short thumbnail is required',
+      });
+    }
+
     await pool.query(
       `UPDATE videos
        SET channel_id = ?,
@@ -1031,8 +1114,10 @@ async function updateMyVideo(req, res) {
            video_key = ?,
            stream_key = ?,
            thumbnail_key = ?,
+           short_thumbnail_key = ?,
            preview_key = ?,
            duration_seconds = ?,
+           video_format = ?,
            visibility = ?,
            status = ?,
            moderation_status = ?,
@@ -1056,8 +1141,10 @@ async function updateMyVideo(req, res) {
         video_key !== undefined ? video_key : currentVideo.video_key,
         stream_key !== undefined ? stream_key : currentVideo.stream_key,
         thumbnail_key !== undefined ? thumbnail_key : currentVideo.thumbnail_key,
+        finalShortThumbnailKey,
         preview_key !== undefined ? preview_key : currentVideo.preview_key,
-        duration_seconds !== undefined ? duration_seconds : currentVideo.duration_seconds,
+        finalDurationSeconds,
+        finalVideoFormat,
         visibility || currentVideo.visibility,
         status || currentVideo.status,
         moderation_status || currentVideo.moderation_status,

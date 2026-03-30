@@ -73,14 +73,13 @@ function isExternalPlanError(message = '') {
   );
 }
 
-function getExternalLinkErrorText(message = '') {
-  const lower = String(message || '').toLowerCase();
-
-  if (lower.includes('plan limit') || lower.includes('upgrade your subscription')) {
-    return 'Upgrade to post with external link';
-  }
-
+function getExternalLinkErrorText() {
   return 'Upgrade to post with external link';
+}
+
+function getVideoFormatFromDuration(durationValue) {
+  const seconds = Number(durationValue || 0);
+  return seconds > 0 && seconds <= 60 ? 'short' : 'regular';
 }
 
 function UploadVideoPage() {
@@ -120,7 +119,15 @@ function UploadVideoPage() {
     send_to_moderation: true,
     video_file: null,
     thumbnail_file: null,
+    short_thumbnail_file: null,
   });
+
+  const videoFormat = useMemo(
+    () => getVideoFormatFromDuration(formData.duration_seconds),
+    [formData.duration_seconds]
+  );
+
+  const isShortVideo = videoFormat === 'short';
 
   useEffect(() => {
     async function loadFormData() {
@@ -198,6 +205,7 @@ function UploadVideoPage() {
             send_to_moderation: false,
             video_file: null,
             thumbnail_file: null,
+            short_thumbnail_file: null,
           });
         } else if (categoriesData.length) {
           setFormData((prev) => ({
@@ -382,17 +390,41 @@ function UploadVideoPage() {
         throw new Error('Please choose a thumbnail image');
       }
 
+      const existingShortThumb =
+        editingVideo?.short_thumbnail_key ||
+        editingVideo?.shortThumbnailKey ||
+        '';
+
+      if (!formData.short_thumbnail_file && !existingShortThumb) {
+        throw new Error('Short thumbnail is required.');
+      }
+
       let videoKey = editingVideo?.video_key || '';
       let thumbnailKey = editingVideo?.thumbnail_key || '';
+      let shortThumbnailKey = existingShortThumb;
 
       if (formData.video_file) {
         setUploadStage('Uploading video file...');
-        videoKey = await uploadAsset(formData.video_file, 'videos', 0, 70);
+        videoKey = await uploadAsset(formData.video_file, 'videos', 0, 60);
       }
 
       if (formData.thumbnail_file) {
         setUploadStage('Uploading thumbnail...');
-        thumbnailKey = await uploadAsset(formData.thumbnail_file, 'thumbnails', 70, 92);
+        thumbnailKey = await uploadAsset(formData.thumbnail_file, 'thumbnails', 60, 80);
+      }
+
+      if (formData.short_thumbnail_file) {
+        setUploadStage('Uploading short thumbnail...');
+        shortThumbnailKey = await uploadAsset(
+          formData.short_thumbnail_file,
+          'short-thumbnails',
+          80,
+          92
+        );
+      }
+
+      if (!shortThumbnailKey) {
+        throw new Error('Short thumbnail is required.');
       }
 
       setUploadStage(isEditMode ? 'Saving video changes...' : 'Saving video metadata...');
@@ -413,6 +445,7 @@ function UploadVideoPage() {
         buy_now_enabled: 1,
         is_monetized: formData.is_monetized ? 1 : 0,
         buy_now_url: buyNowUrl,
+        short_thumbnail_key: shortThumbnailKey,
       };
 
       if (videoKey) {
@@ -483,6 +516,7 @@ function UploadVideoPage() {
           send_to_moderation: true,
           video_file: null,
           thumbnail_file: null,
+          short_thumbnail_file: null,
         });
       }
 
@@ -583,7 +617,7 @@ function UploadVideoPage() {
           <span>
             {isEditMode
               ? 'Update your submitted video details here.'
-              : 'Upload a video file manually, attach category, thumbnail and tags, and optionally send it to moderation.'}
+              : 'Upload a video file manually, attach category, thumbnail, short thumbnail and tags, and optionally send it to moderation.'}
           </span>
         </div>
 
@@ -699,6 +733,44 @@ function UploadVideoPage() {
 
           <div className="form-grid">
             <div className="form-group">
+              <label>Duration Seconds</label>
+              <input
+                type="number"
+                min="1"
+                name="duration_seconds"
+                value={formData.duration_seconds}
+                onChange={handleChange}
+                placeholder="Enter video duration in seconds"
+                required
+              />
+              <div className="upload-file-meta">
+                <strong>
+                  Format detected: {isShortVideo ? 'Short video' : 'Regular video'}
+                </strong>
+                <span>
+                  {isShortVideo
+                    ? '60 seconds or below will go to Shorts.'
+                    : 'Above 60 seconds stays in normal videos.'}
+                </span>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Visibility</label>
+              <select
+                name="visibility"
+                value={formData.visibility}
+                onChange={handleChange}
+              >
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+                <option value="unlisted">Unlisted</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <div className="form-group">
               <label>{isEditMode ? 'Replace Video File (Optional)' : 'Video File Upload'}</label>
               <input
                 type="file"
@@ -742,6 +814,37 @@ function UploadVideoPage() {
           </div>
 
           <div className="form-group">
+            <label>
+              {isEditMode ? 'Replace Short Thumbnail (Optional)' : 'Short Thumbnail Upload'}
+            </label>
+            <input
+              type="file"
+              name="short_thumbnail_file"
+              accept="image/*"
+              onChange={handleChange}
+              required={!isEditMode}
+            />
+            {formData.short_thumbnail_file ? (
+              <div className="upload-file-meta">
+                <strong>{formData.short_thumbnail_file.name}</strong>
+                <span>Short thumbnail ready</span>
+              </div>
+            ) : isEditMode && (
+              editingVideo?.short_thumbnail_key ||
+              editingVideo?.shortThumbnailKey
+            ) ? (
+              <div className="upload-file-meta">
+                <strong>Keeping current short thumbnail</strong>
+              </div>
+            ) : (
+              <div className="upload-file-meta">
+                <strong>Short thumbnail is compulsory</strong>
+                <span>This will be used in the Shorts section.</span>
+              </div>
+            )}
+          </div>
+
+          <div className="form-group">
             <label>Tags</label>
             <div className="upload-tags-list">
               {tagOptions.map((tag) => {
@@ -761,6 +864,28 @@ function UploadVideoPage() {
                 );
               })}
             </div>
+          </div>
+
+          <div className="upload-options">
+            <label className="check-row">
+              <input
+                type="checkbox"
+                name="comments_enabled"
+                checked={formData.comments_enabled}
+                onChange={handleChange}
+              />
+              Allow comments
+            </label>
+
+            <label className="check-row">
+              <input
+                type="checkbox"
+                name="is_monetized"
+                checked={formData.is_monetized}
+                onChange={handleChange}
+              />
+              Monetize this video
+            </label>
           </div>
 
           {!isEditMode ? (

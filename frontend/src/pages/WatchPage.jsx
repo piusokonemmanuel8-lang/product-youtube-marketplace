@@ -65,6 +65,50 @@ function formatViews(value) {
   return `${views.toLocaleString()} views`;
 }
 
+function formatCompactNumber(value) {
+  const number = Number(value || 0);
+
+  if (!Number.isFinite(number)) return '0';
+
+  if (number >= 1000000) {
+    return `${(number / 1000000).toFixed(number >= 10000000 ? 0 : 1)}M`;
+  }
+
+  if (number >= 1000) {
+    return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}K`;
+  }
+
+  return number.toLocaleString();
+}
+
+function formatShortDuration(secondsValue) {
+  const seconds = Number(secondsValue || 0);
+
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return 'Short';
+  }
+
+  if (seconds < 60) {
+    return `0:${String(seconds).padStart(2, '0')}`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const secondsLeft = seconds % 60;
+
+  return `${minutes}:${String(secondsLeft).padStart(2, '0')}`;
+}
+
+function resolveVideoFormat(video) {
+  const direct = String(video?.video_format || '').toLowerCase();
+
+  if (direct === 'short' || direct === 'regular') {
+    return direct;
+  }
+
+  const duration = Number(video?.duration_seconds || 0);
+  return duration > 0 && duration <= 60 ? 'short' : 'regular';
+}
+
 function getShareChoice() {
   const choice = window.prompt(
     'Share options: copy_link, whatsapp, facebook, x, telegram, email',
@@ -158,6 +202,274 @@ function normalizeUrl(url) {
   return `https://${rawUrl}`;
 }
 
+function getVideoThumb(item) {
+  return (
+    item?.short_thumbnail_url ||
+    item?.short_thumbnail_key ||
+    item?.thumbnail_url ||
+    item?.thumbnail_key ||
+    ''
+  );
+}
+
+function getVideoSource(item) {
+  return item?.video_url || item?.video_key || '';
+}
+
+function getChannelName(item) {
+  return (
+    item?.channel?.name ||
+    item?.channel_name ||
+    item?.channel?.channel_name ||
+    item?.creator_name ||
+    item?.channel?.username ||
+    'Creator Channel'
+  );
+}
+
+function getChannelId(item) {
+  return item?.channel?.id || item?.channel_id || null;
+}
+
+function getChannelSlug(item) {
+  return (
+    item?.channel?.channel_slug ||
+    item?.channel?.slug ||
+    item?.channel?.handle ||
+    item?.channel?.username ||
+    ''
+  );
+}
+
+function getVideoSlug(item) {
+  return item?.slug || item?.video_slug || '';
+}
+
+function ShortDetailsPanel({
+  video,
+  watchData,
+  comments,
+  tags,
+  reactions,
+  shareSummary,
+  isSaved,
+  savingAction,
+  reactionAction,
+  shareLoading,
+  buyNowLoading,
+  subscribeLoading,
+  isSubscribed,
+  liveSubscribers,
+  channel,
+  channelId,
+  channelSlug,
+  commentText,
+  setCommentText,
+  commentLoading,
+  handleReact,
+  handleRemoveReaction,
+  handleSaveToggle,
+  handleShare,
+  handleBuyNowClick,
+  handleSubscribeToggle,
+  handleCommentSubmit,
+  formatDate,
+  formatViews,
+  formatCompactNumber,
+  getCommentName,
+  setShortInfoOpen,
+}) {
+  return (
+    <div className="watch-short-panel-sheet">
+      <div className="watch-short-panel-head">
+        <div className="watch-short-panel-head-top">
+          <div className="watch-short-badge">Short</div>
+
+          <button
+            type="button"
+            className="watch-short-close-btn"
+            onClick={() => setShortInfoOpen(false)}
+          >
+            Close
+          </button>
+        </div>
+
+        <h1 className="watch-short-title">{video?.title || 'Untitled Video'}</h1>
+
+        <div className="watch-short-meta">
+          <span>
+            {formatViews(
+              watchData?.metrics?.total_views ?? video?.views_count ?? video?.views
+            )}
+          </span>
+          <span>{formatDate(video?.published_at || video?.created_at)}</span>
+        </div>
+      </div>
+
+      <div className="watch-short-action-row">
+        <button
+          type="button"
+          className="watch-action-btn"
+          onClick={() => handleReact('like')}
+          disabled={reactionAction}
+        >
+          Like {reactions?.likes_count ?? reactions?.likes ?? 0}
+        </button>
+
+        <button
+          type="button"
+          className="watch-action-btn"
+          onClick={() => handleReact('dislike')}
+          disabled={reactionAction}
+        >
+          Dislike {reactions?.dislikes_count ?? reactions?.dislikes ?? 0}
+        </button>
+
+        <button
+          type="button"
+          className="watch-action-btn"
+          onClick={handleRemoveReaction}
+          disabled={reactionAction}
+        >
+          Remove Reaction
+        </button>
+
+        <button
+          type="button"
+          className="watch-action-btn"
+          onClick={handleSaveToggle}
+          disabled={savingAction}
+        >
+          {isSaved ? 'Unsave' : 'Save'}
+        </button>
+
+        <button
+          type="button"
+          className="watch-action-btn"
+          onClick={handleShare}
+          disabled={shareLoading}
+        >
+          Share {shareSummary?.total_shares ?? shareSummary?.shares ?? 0}
+        </button>
+      </div>
+
+      <div className="watch-short-creator-bar">
+        <div className="watch-creator-left">
+          <div className="watch-avatar">
+            {(channel?.name || channel?.channel_name || 'C').slice(0, 1).toUpperCase()}
+          </div>
+
+          <div>
+            <h3 className="watch-creator-name">
+              {channel?.name || channel?.channel_name || 'Creator Channel'}
+            </h3>
+            <p className="watch-creator-subs">
+              {formatCompactNumber(liveSubscribers)} subscribers
+            </p>
+          </div>
+        </div>
+
+        <div className="watch-short-creator-buttons">
+          <button
+            type="button"
+            className="watch-subscribe-btn"
+            onClick={handleSubscribeToggle}
+            disabled={subscribeLoading || !channelId}
+          >
+            {subscribeLoading ? 'Please wait...' : isSubscribed ? 'Subscribed' : 'Subscribe'}
+          </button>
+
+          <a
+            href={channelSlug ? `/channel/${channelSlug}` : '/channel'}
+            className="watch-subscribe-btn secondary"
+          >
+            Visit Channel
+          </a>
+        </div>
+      </div>
+
+      <div className="watch-short-desc">
+        <h3>Description</h3>
+        <p>{video?.description || 'No description available yet.'}</p>
+
+        {tags.length ? (
+          <div className="watch-tags-wrap">
+            {tags.map((tag, index) => {
+              const name = tag?.name || tag?.title || tag?.tag || `Tag ${index + 1}`;
+              return (
+                <span className="watch-tag-pill" key={`${name}-${index}`}>
+                  {name}
+                </span>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="watch-short-comments">
+        <h3>Comments ({comments.length})</h3>
+
+        <form className="watch-comment-input" onSubmit={handleCommentSubmit}>
+          <input
+            type="text"
+            placeholder="Write a comment"
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+          />
+          <button type="submit" disabled={commentLoading}>
+            {commentLoading ? 'Posting...' : 'Comment'}
+          </button>
+        </form>
+
+        <div className="watch-comments-list">
+          {comments.length ? (
+            comments.slice(0, 6).map((comment, index) => {
+              const commentName = getCommentName(comment);
+              const content =
+                comment?.comment_text ||
+                comment?.content ||
+                comment?.comment ||
+                comment?.body ||
+                'No comment text';
+
+              return (
+                <div className="watch-comment-item" key={comment?.id || index}>
+                  <div className="watch-comment-avatar">
+                    {commentName.slice(0, 1).toUpperCase()}
+                  </div>
+
+                  <div>
+                    <p className="watch-comment-name">
+                      {commentName}
+                      <span>{formatDate(comment?.created_at || comment?.date || 'Just now')}</span>
+                    </p>
+                    <p className="watch-comment-text">{content}</p>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="watch-related-empty">No comments yet.</div>
+          )}
+        </div>
+      </div>
+
+      <div className="watch-short-panel-footer">
+        <a
+          className="watch-buy-btn watch-short-buy-btn-full"
+          href={normalizeUrl(video?.buy_link || video?.buy_now_url || '#') || '#'}
+          target="_blank"
+          rel="noreferrer"
+          onClick={handleBuyNowClick}
+          aria-disabled={buyNowLoading}
+        >
+          {buyNowLoading ? 'Opening...' : 'Buy Now'}
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function WatchPage() {
   const [slug, setSlug] = useState(getSlugFromUrl());
   const [watchData, setWatchData] = useState(null);
@@ -187,12 +499,16 @@ function WatchPage() {
   const [skipReady, setSkipReady] = useState(false);
   const [adLoading, setAdLoading] = useState(false);
 
+  const [shortInfoOpen, setShortInfoOpen] = useState(false);
+  const [activeShortIndex, setActiveShortIndex] = useState(0);
+
   const videoRef = useRef(null);
   const adVideoRef = useRef(null);
   const adCountdownIntervalRef = useRef(null);
   const adEndedRef = useRef(false);
   const adImpressionTrackedRef = useRef(false);
   const adImpressionIdRef = useRef(null);
+  const shortsFeedRef = useRef(null);
 
   useEffect(() => {
     const syncSlug = () => setSlug(getSlugFromUrl());
@@ -245,6 +561,40 @@ function WatchPage() {
     );
   }, [channel]);
 
+  const isShortVideo = useMemo(() => resolveVideoFormat(video) === 'short', [video]);
+
+  const liveSubscribers =
+    channelSubscriptionData?.subscribers_count ??
+    channel?.subscriber_count ??
+    channel?.subscribers_count ??
+    channel?.subscribers ??
+    0;
+
+  const shortThumb = useMemo(() => getVideoThumb(video), [video]);
+
+  const shortFeed = useMemo(() => {
+    if (!isShortVideo) return [];
+
+    const currentItem = {
+      ...video,
+      id: video?.id || watchData?.id || 'current-short',
+      slug: getVideoSlug(video) || slug,
+      channel: channel,
+      isCurrentWatchItem: true,
+      __sourceIndex: 0,
+    };
+
+    const extraShorts = relatedVideos
+      .filter((item) => resolveVideoFormat(item) === 'short')
+      .filter((item) => String(item?.id || item?.video_id || '') !== String(video?.id || ''))
+      .map((item, index) => ({
+        ...item,
+        __sourceIndex: index + 1,
+      }));
+
+    return [currentItem, ...extraShorts];
+  }, [isShortVideo, video, relatedVideos, channel, watchData, slug]);
+
   useEffect(() => {
     return () => {
       if (adCountdownIntervalRef.current) {
@@ -268,6 +618,8 @@ function WatchPage() {
       setShowPrerollAd(false);
       setSkipReady(false);
       setAdCountdown(3);
+      setShortInfoOpen(false);
+      setActiveShortIndex(0);
       adEndedRef.current = false;
       adImpressionTrackedRef.current = false;
       adImpressionIdRef.current = null;
@@ -440,6 +792,39 @@ function WatchPage() {
   }, [slug]);
 
   useEffect(() => {
+    if (!isShortVideo || !shortsFeedRef.current) return;
+
+    const container = shortsFeedRef.current;
+    const handleScroll = () => {
+      const slides = Array.from(container.querySelectorAll('.watch-short-slide'));
+      if (!slides.length) return;
+
+      let closestIndex = 0;
+      let closestDistance = Number.POSITIVE_INFINITY;
+
+      slides.forEach((slide, index) => {
+        const distance = Math.abs(slide.offsetTop - container.scrollTop);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestIndex = index;
+        }
+      });
+
+      setActiveShortIndex(closestIndex);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, [isShortVideo, shortFeed.length]);
+
+  useEffect(() => {
+    setShortInfoOpen(false);
+  }, [activeShortIndex, slug]);
+
+  useEffect(() => {
     if (!showPrerollAd || !adData?.ad_video_id) {
       if (adCountdownIntervalRef.current) {
         clearInterval(adCountdownIntervalRef.current);
@@ -496,7 +881,7 @@ function WatchPage() {
   }, [showPrerollAd, adData]);
 
   useEffect(() => {
-    if (!videoRef.current || !video?.video_url || showPrerollAd) return;
+    if (!videoRef.current || !video?.video_url || showPrerollAd || !isShortVideo) return;
 
     const playVideo = async () => {
       try {
@@ -508,7 +893,7 @@ function WatchPage() {
     };
 
     playVideo();
-  }, [watchData, video?.video_url, showPrerollAd]);
+  }, [watchData, video?.video_url, showPrerollAd, isShortVideo]);
 
   useEffect(() => {
     if (!adVideoRef.current || !showPrerollAd || !adData?.video_key) return;
@@ -701,27 +1086,34 @@ function WatchPage() {
     }
   }
 
-  async function handleBuyNowClick(event) {
+  async function handleBuyNowClick(event, targetVideo = null) {
     event.preventDefault();
 
-    const destinationUrl = video?.buy_link || video?.buy_now_url || '';
+    const currentVideo = targetVideo || video;
+    const currentVideoId = currentVideo?.id || currentVideo?.video_id || videoId;
+    const destinationUrl = currentVideo?.buy_link || currentVideo?.buy_now_url || '';
 
-    if (!videoId || !destinationUrl || destinationUrl === '#') {
+    if (!currentVideoId || !destinationUrl || destinationUrl === '#') {
       setErrorMessage('Buy now link is not available.');
       return;
     }
 
-    setBuyNowLoading(true);
+    if (!targetVideo || currentVideoId === videoId) {
+      setBuyNowLoading(true);
+    }
+
     setPageMessage('');
     setErrorMessage('');
 
     try {
-      await recordProductClick(videoId, {
+      await recordProductClick(currentVideoId, {
         destination_url: destinationUrl,
       });
     } catch (error) {
     } finally {
-      setBuyNowLoading(false);
+      if (!targetVideo || currentVideoId === videoId) {
+        setBuyNowLoading(false);
+      }
     }
 
     const finalUrl = normalizeUrl(destinationUrl);
@@ -823,458 +1215,668 @@ function WatchPage() {
     );
   }
 
-  const liveSubscribers =
-    channelSubscriptionData?.subscribers_count ??
-    channel?.subscriber_count ??
-    channel?.subscribers_count ??
-    channel?.subscribers ??
-    0;
-
   return (
-    <div className="watch-page">
-      <div className="watch-layout">
-        <main className="watch-main">
-          <div className="watch-player" style={{ position: 'relative' }}>
-            {showPrerollAd && adData?.video_key ? (
-              <div
-                style={{
-                  position: 'relative',
-                  width: '100%',
-                  background: '#000',
-                  borderRadius: 16,
-                  overflow: 'hidden',
-                }}
-              >
-                <video
-                  key={adData.ad_video_id}
-                  ref={adVideoRef}
-                  className="watch-real-video"
-                  controls
-                  autoPlay
-                  muted
-                  playsInline
-                  preload="auto"
-                  src={adData.video_key}
-                  poster={adData.thumbnail_key || ''}
-                  onEnded={finishAdPlayback}
-                />
-
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 14,
-                    left: 14,
-                    background: 'rgba(0,0,0,0.72)',
-                    color: '#fff',
-                    padding: '8px 12px',
-                    borderRadius: 999,
-                    fontSize: 13,
-                    fontWeight: 600,
-                  }}
-                >
-                  Sponsored Ad
-                </div>
-
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 14,
-                    right: 14,
-                    display: 'flex',
-                    gap: 10,
-                    alignItems: 'center',
-                  }}
-                >
-                  {!skipReady ? (
-                    <div
-                      style={{
-                        background: 'rgba(0,0,0,0.72)',
-                        color: '#fff',
-                        padding: '8px 12px',
-                        borderRadius: 999,
-                        fontSize: 13,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Skip in {adCountdown}s
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleSkipAd}
-                      style={{
-                        background: '#fff',
-                        color: '#111',
-                        border: 'none',
-                        padding: '10px 14px',
-                        borderRadius: 999,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Skip Ad
-                    </button>
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: 14,
-                    bottom: 14,
-                    display: 'flex',
-                    gap: 10,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  {adData?.campaign_title ? (
-                    <div
-                      style={{
-                        background: 'rgba(0,0,0,0.72)',
-                        color: '#fff',
-                        padding: '8px 12px',
-                        borderRadius: 999,
-                        fontSize: 13,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {adData.campaign_title}
-                    </div>
-                  ) : null}
-
-                  {adData?.destination_url ? (
-                    <button
-                      type="button"
-                      onClick={handleAdClick}
-                      style={{
-                        background: '#ff2d55',
-                        color: '#fff',
-                        border: 'none',
-                        padding: '10px 14px',
-                        borderRadius: 999,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Visit Advertiser
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ) : video?.video_url ? (
-              <video
-                ref={videoRef}
-                className="watch-real-video"
-                controls
-                autoPlay
-                playsInline
-                preload="auto"
-                src={video.video_url}
-                poster={video?.thumbnail_url || ''}
-                onLoadedMetadata={() => {
-                  if (!videoRef.current) return;
-                  videoRef.current.muted = false;
-                  videoRef.current.defaultMuted = false;
-                  videoRef.current.volume = 1;
-                  videoRef.current.play().catch(() => {});
-                }}
-                onCanPlay={() => {
-                  if (!videoRef.current) return;
-                  videoRef.current.muted = false;
-                  videoRef.current.defaultMuted = false;
-                  videoRef.current.volume = 1;
-                  videoRef.current.play().catch(() => {});
-                }}
-              />
-            ) : (
-              <div className="watch-player-screen">
-                {adLoading ? 'Loading ad...' : 'Video Player Placeholder'}
-              </div>
-            )}
-          </div>
-
+    <div className={`watch-page ${isShortVideo ? 'watch-page-short' : ''}`}>
+      {isShortVideo ? (
+        <div className="watch-short-feed-shell">
           {errorMessage ? (
-            <div className="watch-inline-message error">{errorMessage}</div>
+            <div className="watch-inline-message error watch-short-top-message">
+              {errorMessage}
+            </div>
           ) : null}
 
           {pageMessage ? (
-            <div className="watch-inline-message success">{pageMessage}</div>
+            <div className="watch-inline-message success watch-short-top-message">
+              {pageMessage}
+            </div>
           ) : null}
 
-          <section className="watch-details-card">
-            <h1 className="watch-title">{video?.title || 'Untitled Video'}</h1>
+          <div className="watch-short-feed" ref={shortsFeedRef}>
+            {shortFeed.map((item, index) => {
+              const itemThumb = getVideoThumb(item);
+              const itemSource = getVideoSource(item);
+              const itemSlug = getVideoSlug(item);
+              const itemChannelName = getChannelName(item);
+              const itemIsCurrent = item?.isCurrentWatchItem === true;
+              const isActiveSlide = activeShortIndex === index;
+              const itemViews = item?.isCurrentWatchItem
+                ? watchData?.metrics?.total_views ?? item?.views_count ?? item?.views
+                : item?.views_count ?? item?.views ?? 0;
 
-            <div className="watch-meta-row">
-              <div>
-                <div className="watch-meta-main">
-                  {formatViews(
-                    watchData?.metrics?.total_views ??
-                      video?.views_count ??
-                      video?.views
-                  )}
+              return (
+                <section
+                  className="watch-short-slide"
+                  key={`${item?.id || item?.video_id || 'short'}-${index}`}
+                >
+                  <div className="watch-short-stage">
+                    <div className="watch-short-player-box watch-short-player-box-full">
+                      {itemIsCurrent && showPrerollAd && adData?.video_key ? (
+                        <>
+                          <video
+                            key={adData.ad_video_id}
+                            ref={adVideoRef}
+                            className="watch-short-video"
+                            controls
+                            autoPlay
+                            muted
+                            playsInline
+                            preload="auto"
+                            src={adData.video_key}
+                            poster={adData.thumbnail_key || itemThumb || ''}
+                            onEnded={finishAdPlayback}
+                          />
+
+                          <div className="watch-short-ad-top-left">Sponsored Ad</div>
+
+                          <div className="watch-short-ad-top-right">
+                            {!skipReady ? (
+                              <div className="watch-short-ad-pill">Skip in {adCountdown}s</div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={handleSkipAd}
+                                className="watch-short-ad-skip-btn"
+                              >
+                                Skip Ad
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="watch-short-ad-bottom-left">
+                            {adData?.campaign_title ? (
+                              <div className="watch-short-ad-pill">
+                                {adData.campaign_title}
+                              </div>
+                            ) : null}
+
+                            {adData?.destination_url ? (
+                              <button
+                                type="button"
+                                onClick={handleAdClick}
+                                className="watch-short-ad-visit-btn"
+                              >
+                                Visit Advertiser
+                              </button>
+                            ) : null}
+                          </div>
+                        </>
+                      ) : itemSource ? (
+                        <video
+                          ref={itemIsCurrent ? videoRef : undefined}
+                          className="watch-short-video"
+                          controls={itemIsCurrent}
+                          autoPlay={isActiveSlide}
+                          muted={!itemIsCurrent}
+                          playsInline
+                          preload="metadata"
+                          loop={!itemIsCurrent}
+                          src={itemSource}
+                          poster={itemThumb}
+                          onLoadedMetadata={() => {
+                            if (!itemIsCurrent || !videoRef.current) return;
+                            videoRef.current.muted = false;
+                            videoRef.current.defaultMuted = false;
+                            videoRef.current.volume = 1;
+                            videoRef.current.play().catch(() => {});
+                          }}
+                          onCanPlay={() => {
+                            if (!itemIsCurrent || !videoRef.current) return;
+                            videoRef.current.muted = false;
+                            videoRef.current.defaultMuted = false;
+                            videoRef.current.volume = 1;
+                            videoRef.current.play().catch(() => {});
+                          }}
+                        />
+                      ) : itemThumb ? (
+                        <div
+                          className="watch-short-empty has-poster"
+                          style={{ backgroundImage: `url(${itemThumb})` }}
+                        />
+                      ) : (
+                        <div className="watch-short-empty">
+                          {adLoading && itemIsCurrent ? 'Loading ad...' : 'Short Video'}
+                        </div>
+                      )}
+
+                      <div className="watch-short-duration">
+                        {formatShortDuration(item?.duration_seconds)}
+                      </div>
+
+                      <div className="watch-short-bottom-dock">
+                        <a
+                          className="watch-buy-btn watch-short-buy-btn"
+                          href={normalizeUrl(item?.buy_link || item?.buy_now_url || '#') || '#'}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(event) => handleBuyNowClick(event, item)}
+                          aria-disabled={buyNowLoading && itemIsCurrent}
+                        >
+                          {buyNowLoading && itemIsCurrent ? 'Opening...' : 'Buy Now'}
+                        </a>
+
+                        <button
+                          type="button"
+                          className="watch-short-toggle-btn"
+                          onClick={() => {
+                            if (!itemIsCurrent && itemSlug) {
+                              window.location.href = `/watch/${itemSlug}`;
+                              return;
+                            }
+                            setShortInfoOpen((prev) => !prev);
+                          }}
+                        >
+                          {itemIsCurrent
+                            ? shortInfoOpen
+                              ? 'Hide details'
+                              : 'Show details'
+                            : 'Open short'}
+                        </button>
+                      </div>
+
+                      <div className="watch-short-overlay-meta">
+                        <div className="watch-short-badge">Short</div>
+                        <h2>{item?.title || 'Untitled Video'}</h2>
+                        <p>
+                          {formatViews(itemViews)} • {formatDate(item?.published_at || item?.created_at)}
+                        </p>
+                        <span>{itemChannelName}</span>
+                      </div>
+                    </div>
+
+                    {itemIsCurrent && shortInfoOpen ? (
+                      <div className="watch-short-panel-open">
+                        <ShortDetailsPanel
+                          video={video}
+                          watchData={watchData}
+                          comments={comments}
+                          tags={tags}
+                          reactions={reactions}
+                          shareSummary={shareSummary}
+                          isSaved={isSaved}
+                          savingAction={savingAction}
+                          reactionAction={reactionAction}
+                          shareLoading={shareLoading}
+                          buyNowLoading={buyNowLoading}
+                          subscribeLoading={subscribeLoading}
+                          isSubscribed={isSubscribed}
+                          liveSubscribers={liveSubscribers}
+                          channel={channel}
+                          channelId={channelId}
+                          channelSlug={channelSlug}
+                          commentText={commentText}
+                          setCommentText={setCommentText}
+                          commentLoading={commentLoading}
+                          handleReact={handleReact}
+                          handleRemoveReaction={handleRemoveReaction}
+                          handleSaveToggle={handleSaveToggle}
+                          handleShare={handleShare}
+                          handleBuyNowClick={handleBuyNowClick}
+                          handleSubscribeToggle={handleSubscribeToggle}
+                          handleCommentSubmit={handleCommentSubmit}
+                          formatDate={formatDate}
+                          formatViews={formatViews}
+                          formatCompactNumber={formatCompactNumber}
+                          getCommentName={getCommentName}
+                          setShortInfoOpen={setShortInfoOpen}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="watch-layout">
+          <main className="watch-main">
+            <div className="watch-player" style={{ position: 'relative' }}>
+              {showPrerollAd && adData?.video_key ? (
+                <div
+                  style={{
+                    position: 'relative',
+                    width: '100%',
+                    background: '#000',
+                    borderRadius: 16,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <video
+                    key={adData.ad_video_id}
+                    ref={adVideoRef}
+                    className="watch-real-video"
+                    controls
+                    autoPlay
+                    muted
+                    playsInline
+                    preload="auto"
+                    src={adData.video_key}
+                    poster={adData.thumbnail_key || ''}
+                    onEnded={finishAdPlayback}
+                  />
+
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 14,
+                      left: 14,
+                      background: 'rgba(0,0,0,0.72)',
+                      color: '#fff',
+                      padding: '8px 12px',
+                      borderRadius: 999,
+                      fontSize: 13,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Sponsored Ad
+                  </div>
+
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 14,
+                      right: 14,
+                      display: 'flex',
+                      gap: 10,
+                      alignItems: 'center',
+                    }}
+                  >
+                    {!skipReady ? (
+                      <div
+                        style={{
+                          background: 'rgba(0,0,0,0.72)',
+                          color: '#fff',
+                          padding: '8px 12px',
+                          borderRadius: 999,
+                          fontSize: 13,
+                          fontWeight: 600,
+                        }}
+                      >
+                        Skip in {adCountdown}s
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSkipAd}
+                        style={{
+                          background: '#fff',
+                          color: '#111',
+                          border: 'none',
+                          padding: '10px 14px',
+                          borderRadius: 999,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Skip Ad
+                      </button>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 14,
+                      bottom: 14,
+                      display: 'flex',
+                      gap: 10,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    {adData?.campaign_title ? (
+                      <div
+                        style={{
+                          background: 'rgba(0,0,0,0.72)',
+                          color: '#fff',
+                          padding: '8px 12px',
+                          borderRadius: 999,
+                          fontSize: 13,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {adData.campaign_title}
+                      </div>
+                    ) : null}
+
+                    {adData?.destination_url ? (
+                      <button
+                        type="button"
+                        onClick={handleAdClick}
+                        style={{
+                          background: '#ff2d55',
+                          color: '#fff',
+                          border: 'none',
+                          padding: '10px 14px',
+                          borderRadius: 999,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Visit Advertiser
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="watch-meta-sub">
-                  {formatDate(video?.published_at || video?.created_at)}
+              ) : video?.video_url ? (
+                <video
+                  ref={videoRef}
+                  className="watch-real-video"
+                  controls
+                  autoPlay
+                  playsInline
+                  preload="auto"
+                  src={video.video_url}
+                  poster={video?.thumbnail_url || ''}
+                  onLoadedMetadata={() => {
+                    if (!videoRef.current) return;
+                    videoRef.current.muted = false;
+                    videoRef.current.defaultMuted = false;
+                    videoRef.current.volume = 1;
+                    videoRef.current.play().catch(() => {});
+                  }}
+                  onCanPlay={() => {
+                    if (!videoRef.current) return;
+                    videoRef.current.muted = false;
+                    videoRef.current.defaultMuted = false;
+                    videoRef.current.volume = 1;
+                    videoRef.current.play().catch(() => {});
+                  }}
+                />
+              ) : (
+                <div className="watch-player-screen">
+                  {adLoading ? 'Loading ad...' : 'Video Player Placeholder'}
+                </div>
+              )}
+            </div>
+
+            {errorMessage ? (
+              <div className="watch-inline-message error">{errorMessage}</div>
+            ) : null}
+
+            {pageMessage ? (
+              <div className="watch-inline-message success">{pageMessage}</div>
+            ) : null}
+
+            <section className="watch-details-card">
+              <h1 className="watch-title">{video?.title || 'Untitled Video'}</h1>
+
+              <div className="watch-meta-row">
+                <div>
+                  <div className="watch-meta-main">
+                    {formatViews(
+                      watchData?.metrics?.total_views ??
+                        video?.views_count ??
+                        video?.views
+                    )}
+                  </div>
+                  <div className="watch-meta-sub">
+                    {formatDate(video?.published_at || video?.created_at)}
+                  </div>
+                </div>
+
+                <div className="watch-action-row">
+                  <button
+                    type="button"
+                    className="watch-action-btn"
+                    onClick={() => handleReact('like')}
+                    disabled={reactionAction}
+                  >
+                    Like {reactions?.likes_count ?? reactions?.likes ?? 0}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="watch-action-btn"
+                    onClick={() => handleReact('dislike')}
+                    disabled={reactionAction}
+                  >
+                    Dislike {reactions?.dislikes_count ?? reactions?.dislikes ?? 0}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="watch-action-btn"
+                    onClick={handleRemoveReaction}
+                    disabled={reactionAction}
+                  >
+                    Remove Reaction
+                  </button>
+
+                  <button
+                    type="button"
+                    className="watch-action-btn"
+                    onClick={handleSaveToggle}
+                    disabled={savingAction}
+                  >
+                    {isSaved ? 'Unsave' : 'Save'}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="watch-action-btn"
+                    onClick={handleShare}
+                    disabled={shareLoading}
+                  >
+                    Share {shareSummary?.total_shares ?? shareSummary?.shares ?? 0}
+                  </button>
+
+                  <a
+                    className="watch-buy-btn"
+                    href={normalizeUrl(video?.buy_link || video?.buy_now_url || '#') || '#'}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(event) => handleBuyNowClick(event, video)}
+                    aria-disabled={buyNowLoading}
+                  >
+                    {buyNowLoading ? 'Opening...' : 'Buy Now'}
+                  </a>
+                </div>
+              </div>
+            </section>
+
+            <section className="watch-creator-card">
+              <div className="watch-creator-left">
+                <div className="watch-avatar">
+                  {(channel?.name || channel?.channel_name || 'C').slice(0, 1).toUpperCase()}
+                </div>
+
+                <div>
+                  <h3 className="watch-creator-name">
+                    {channel?.name || channel?.channel_name || 'Creator Channel'}
+                  </h3>
+                  <p className="watch-creator-subs">
+                    {Number(liveSubscribers).toLocaleString()} subscribers
+                  </p>
                 </div>
               </div>
 
-              <div className="watch-action-row">
+              <div className="watch-creator-actions">
                 <button
                   type="button"
-                  className="watch-action-btn"
-                  onClick={() => handleReact('like')}
-                  disabled={reactionAction}
+                  className="watch-subscribe-btn"
+                  onClick={handleSubscribeToggle}
+                  disabled={subscribeLoading || !channelId}
                 >
-                  Like {reactions?.likes_count ?? reactions?.likes ?? 0}
-                </button>
-
-                <button
-                  type="button"
-                  className="watch-action-btn"
-                  onClick={() => handleReact('dislike')}
-                  disabled={reactionAction}
-                >
-                  Dislike {reactions?.dislikes_count ?? reactions?.dislikes ?? 0}
-                </button>
-
-                <button
-                  type="button"
-                  className="watch-action-btn"
-                  onClick={handleRemoveReaction}
-                  disabled={reactionAction}
-                >
-                  Remove Reaction
-                </button>
-
-                <button
-                  type="button"
-                  className="watch-action-btn"
-                  onClick={handleSaveToggle}
-                  disabled={savingAction}
-                >
-                  {isSaved ? 'Unsave' : 'Save'}
-                </button>
-
-                <button
-                  type="button"
-                  className="watch-action-btn"
-                  onClick={handleShare}
-                  disabled={shareLoading}
-                >
-                  Share {shareSummary?.total_shares ?? shareSummary?.shares ?? 0}
+                  {subscribeLoading ? 'Please wait...' : isSubscribed ? 'Subscribed' : 'Subscribe'}
                 </button>
 
                 <a
-                  className="watch-buy-btn"
-                  href={normalizeUrl(video?.buy_link || video?.buy_now_url || '#') || '#'}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={handleBuyNowClick}
-                  aria-disabled={buyNowLoading}
+                  href={channelSlug ? `/channel/${channelSlug}` : '/channel'}
+                  className="watch-subscribe-btn secondary"
                 >
-                  {buyNowLoading ? 'Opening...' : 'Buy Now'}
+                  Visit Channel
                 </a>
               </div>
-            </div>
-          </section>
+            </section>
 
-          <section className="watch-creator-card">
-            <div className="watch-creator-left">
-              <div className="watch-avatar">
-                {(channel?.name || channel?.channel_name || 'C').slice(0, 1).toUpperCase()}
-              </div>
+            <section className="watch-description-card">
+              <h3>Description</h3>
+              <p>{video?.description || 'No description available yet.'}</p>
 
-              <div>
-                <h3 className="watch-creator-name">
-                  {channel?.name || channel?.channel_name || 'Creator Channel'}
-                </h3>
-                <p className="watch-creator-subs">
-                  {Number(liveSubscribers).toLocaleString()} subscribers
-                </p>
-              </div>
-            </div>
+              {tags.length ? (
+                <div className="watch-tags-wrap">
+                  {tags.map((tag, index) => {
+                    const name =
+                      tag?.name ||
+                      tag?.title ||
+                      tag?.tag ||
+                      `Tag ${index + 1}`;
 
-            <div className="watch-creator-actions">
-              <button
-                type="button"
-                className="watch-subscribe-btn"
-                onClick={handleSubscribeToggle}
-                disabled={subscribeLoading || !channelId}
-              >
-                {subscribeLoading ? 'Please wait...' : isSubscribed ? 'Subscribed' : 'Subscribe'}
-              </button>
+                    return (
+                      <span className="watch-tag-pill" key={`${name}-${index}`}>
+                        {name}
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </section>
 
-              <a
-                href={channelSlug ? `/channel/${channelSlug}` : '/channel'}
-                className="watch-subscribe-btn secondary"
-              >
-                Visit Channel
-              </a>
-            </div>
-          </section>
+            <section className="watch-comments-card">
+              <h3>Comments ({comments.length})</h3>
 
-          <section className="watch-description-card">
-            <h3>Description</h3>
-            <p>{video?.description || 'No description available yet.'}</p>
+              <form className="watch-comment-input" onSubmit={handleCommentSubmit}>
+                <input
+                  type="text"
+                  placeholder="Write a comment"
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                />
+                <button type="submit" disabled={commentLoading}>
+                  {commentLoading ? 'Posting...' : 'Comment'}
+                </button>
+              </form>
 
-            {tags.length ? (
-              <div className="watch-tags-wrap">
-                {tags.map((tag, index) => {
-                  const name =
-                    tag?.name ||
-                    tag?.title ||
-                    tag?.tag ||
-                    `Tag ${index + 1}`;
+              <div className="watch-comments-list">
+                {comments.length ? (
+                  comments.map((comment, index) => {
+                    const commentName = getCommentName(comment);
 
-                  return (
-                    <span className="watch-tag-pill" key={`${name}-${index}`}>
-                      {name}
-                    </span>
-                  );
-                })}
-              </div>
-            ) : null}
-          </section>
+                    const content =
+                      comment?.comment_text ||
+                      comment?.content ||
+                      comment?.comment ||
+                      comment?.body ||
+                      'No comment text';
 
-          <section className="watch-comments-card">
-            <h3>Comments ({comments.length})</h3>
+                    return (
+                      <div className="watch-comment-item" key={comment?.id || index}>
+                        <div className="watch-comment-avatar">
+                          {commentName.slice(0, 1).toUpperCase()}
+                        </div>
 
-            <form className="watch-comment-input" onSubmit={handleCommentSubmit}>
-              <input
-                type="text"
-                placeholder="Write a comment"
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-              />
-              <button type="submit" disabled={commentLoading}>
-                {commentLoading ? 'Posting...' : 'Comment'}
-              </button>
-            </form>
-
-            <div className="watch-comments-list">
-              {comments.length ? (
-                comments.map((comment, index) => {
-                  const commentName = getCommentName(comment);
-
-                  const content =
-                    comment?.comment_text ||
-                    comment?.content ||
-                    comment?.comment ||
-                    comment?.body ||
-                    'No comment text';
-
-                  return (
-                    <div className="watch-comment-item" key={comment?.id || index}>
-                      <div className="watch-comment-avatar">
-                        {commentName.slice(0, 1).toUpperCase()}
+                        <div>
+                          <p className="watch-comment-name">
+                            {commentName}
+                            <span>{formatDate(comment?.created_at || comment?.date || 'Just now')}</span>
+                          </p>
+                          <p className="watch-comment-text">{content}</p>
+                        </div>
                       </div>
+                    );
+                  })
+                ) : (
+                  <div className="watch-related-empty">No comments yet.</div>
+                )}
+              </div>
+            </section>
+          </main>
 
-                      <div>
-                        <p className="watch-comment-name">
-                          {commentName}
-                          <span>{formatDate(comment?.created_at || comment?.date || 'Just now')}</span>
-                        </p>
-                        <p className="watch-comment-text">{content}</p>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="watch-related-empty">No comments yet.</div>
-              )}
-            </div>
-          </section>
-        </main>
+          <aside className="watch-sidebar">
+            <section className="watch-sidebar-block">
+              <h3 className="watch-sidebar-title">Featured Ads</h3>
 
-        <aside className="watch-sidebar">
-          <section className="watch-sidebar-block">
-            <h3 className="watch-sidebar-title">Featured Ads</h3>
+              <div className="watch-related-list">
+                {featuredAds.length ? (
+                  featuredAds.map((item, index) => {
+                    const title = item?.ad_title || item?.campaign_title || `Featured Ad ${index + 1}`;
+                    const campaignTitle = item?.campaign_title || 'Sponsored';
+                    const impressions = Number(item?.total_impressions || 0);
+                    const thumb = item?.thumbnail_key || '';
 
-            <div className="watch-related-list">
-              {featuredAds.length ? (
-                featuredAds.map((item, index) => {
-                  const title = item?.ad_title || item?.campaign_title || `Featured Ad ${index + 1}`;
-                  const campaignTitle = item?.campaign_title || 'Sponsored';
-                  const impressions = Number(item?.total_impressions || 0);
-                  const thumb = item?.thumbnail_key || '';
-
-                  return (
-                    <button
-                      type="button"
-                      className="watch-related-item watch-featured-ad-item"
-                      key={`${item?.campaign_id || 'campaign'}-${item?.ad_video_id || index}`}
-                      onClick={() => handleFeaturedAdClick(item)}
-                    >
-                      <div
-                        className={`watch-related-thumb ${thumb ? 'has-image' : ''}`}
-                        style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
+                    return (
+                      <button
+                        type="button"
+                        className="watch-related-item watch-featured-ad-item"
+                        key={`${item?.campaign_id || 'campaign'}-${item?.ad_video_id || index}`}
+                        onClick={() => handleFeaturedAdClick(item)}
                       >
-                        {!thumb ? 'Ad' : null}
-                      </div>
+                        <div
+                          className={`watch-related-thumb ${thumb ? 'has-image' : ''}`}
+                          style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
+                        >
+                          {!thumb ? 'Ad' : null}
+                        </div>
 
-                      <div className="watch-related-info">
-                        <span className="watch-featured-ad-badge">Featured Ad</span>
-                        <h4>{title}</h4>
-                        <p>{campaignTitle}</p>
-                        <p>{impressions.toLocaleString()} impressions</p>
-                      </div>
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="watch-related-empty">No featured ads available.</div>
-              )}
-            </div>
-          </section>
+                        <div className="watch-related-info">
+                          <span className="watch-featured-ad-badge">Featured Ad</span>
+                          <h4>{title}</h4>
+                          <p>{campaignTitle}</p>
+                          <p>{impressions.toLocaleString()} impressions</p>
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="watch-related-empty">No featured ads available.</div>
+                )}
+              </div>
+            </section>
 
-          <section className="watch-sidebar-block watch-related-section">
-            <h3 className="watch-sidebar-title">Related Videos</h3>
+            <section className="watch-sidebar-block watch-related-section">
+              <h3 className="watch-sidebar-title">Related Videos</h3>
 
-            <div className="watch-related-list">
-              {relatedVideos.length ? (
-                relatedVideos.map((item, index) => {
-                  const relatedSlug = item?.slug || item?.video_slug || '';
-                  const relatedTitle = item?.title || `Related video ${index + 1}`;
-                  const relatedCreator =
-                    item?.channel_name ||
-                    item?.creator_name ||
-                    item?.channel?.name ||
-                    'Creator';
-                  const relatedViews = item?.views || item?.views_count || 0;
-                  const thumb = item?.thumbnail_url || '';
-                  const relatedVideoId = item?.id || item?.video_id || null;
+              <div className="watch-related-list">
+                {relatedVideos.length ? (
+                  relatedVideos.map((item, index) => {
+                    const relatedSlug = item?.slug || item?.video_slug || '';
+                    const relatedTitle = item?.title || `Related video ${index + 1}`;
+                    const relatedCreator =
+                      item?.channel_name ||
+                      item?.creator_name ||
+                      item?.channel?.name ||
+                      'Creator';
+                    const relatedViews = item?.views || item?.views_count || 0;
+                    const relatedIsShort = resolveVideoFormat(item) === 'short';
+                    const thumb =
+                      item?.short_thumbnail_url ||
+                      item?.short_thumbnail_key ||
+                      item?.thumbnail_url ||
+                      '';
+                    const relatedVideoId = item?.id || item?.video_id || null;
 
-                  return (
-                    <a
-                      href={relatedSlug ? `/watch/${relatedSlug}` : '/watch'}
-                      className="watch-related-item"
-                      key={item?.id || index}
-                      onClick={(event) =>
-                        handleRelatedVideoClick(event, relatedVideoId, relatedSlug)
-                      }
-                    >
-                      <div
-                        className={`watch-related-thumb ${thumb ? 'has-image' : ''}`}
-                        style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
+                    return (
+                      <a
+                        href={relatedSlug ? `/watch/${relatedSlug}` : '/watch'}
+                        className="watch-related-item"
+                        key={item?.id || index}
+                        onClick={(event) =>
+                          handleRelatedVideoClick(event, relatedVideoId, relatedSlug)
+                        }
                       >
-                        {!thumb ? 'Related' : null}
-                      </div>
+                        <div
+                          className={`watch-related-thumb ${thumb ? 'has-image' : ''}`}
+                          style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
+                        >
+                          {!thumb ? (relatedIsShort ? 'Short' : 'Related') : null}
+                        </div>
 
-                      <div className="watch-related-info">
-                        <h4>{relatedTitle}</h4>
-                        <p>{relatedCreator}</p>
-                        <p>{Number(relatedViews || 0).toLocaleString()} views</p>
-                      </div>
-                    </a>
-                  );
-                })
-              ) : (
-                <div className="watch-related-empty">No related videos available.</div>
-              )}
-            </div>
-          </section>
-        </aside>
-      </div>
+                        <div className="watch-related-info">
+                          <h4>{relatedTitle}</h4>
+                          <p>{relatedCreator}</p>
+                          <p>{Number(relatedViews || 0).toLocaleString()} views</p>
+                        </div>
+                      </a>
+                    );
+                  })
+                ) : (
+                  <div className="watch-related-empty">No related videos available.</div>
+                )}
+              </div>
+            </section>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
