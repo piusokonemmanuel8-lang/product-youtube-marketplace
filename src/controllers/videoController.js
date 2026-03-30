@@ -5,6 +5,9 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 const pool = require('../config/db');
 const s3 = require('../config/s3');
+const {
+  ensureLatestSubscriptionState,
+} = require('./externalPostingPlanController');
 
 const S3_BUCKET_NAME =
   process.env.AWS_S3_BUCKET ||
@@ -63,6 +66,8 @@ function normalizeVideoRow(video) {
     views_count: Number(resolvedViews || 0),
     total_views: Number(resolvedViews || 0),
     views: Number(resolvedViews || 0),
+    uses_external_link: Number(video.uses_external_link || 0),
+    external_link_subscription_required: Number(video.external_link_subscription_required || 0),
   };
 }
 
@@ -146,8 +151,10 @@ async function getMarketplaceAuthByCreatorId(creatorId) {
 }
 
 async function getActiveExternalPlanSubscription(creatorId) {
+  await ensureLatestSubscriptionState(creatorId);
+
   const [rows] = await pool.query(
-    `SELECT cps.*, epp.post_limit, epp.duration_days, epp.name AS plan_name
+    `SELECT cps.*, epp.video_limit_per_month, epp.duration_days, epp.name AS plan_name
      FROM creator_plan_subscriptions cps
      INNER JOIN external_posting_plans epp ON cps.plan_id = epp.id
      WHERE cps.creator_id = ?
@@ -168,7 +175,7 @@ async function getActiveExternalPlanSubscription(creatorId) {
 async function consumeExternalPlanPostSlot(subscriptionId) {
   await pool.query(
     `UPDATE creator_plan_subscriptions
-     SET posts_used = posts_used + 1
+     SET videos_used_this_cycle = videos_used_this_cycle + 1
      WHERE id = ?`,
     [subscriptionId]
   );
@@ -181,18 +188,18 @@ async function validateExternalPlanAccess(creatorId) {
     return {
       allowed: false,
       statusCode: 402,
-      message: 'No active external posting plan found',
+      message: 'Subscribe to a plan to post external product links.',
     };
   }
 
   if (
-    Number(activeSubscription.post_limit) > 0 &&
-    Number(activeSubscription.posts_used) >= Number(activeSubscription.post_limit)
+    Number(activeSubscription.video_limit_per_month) > 0 &&
+    Number(activeSubscription.videos_used_this_cycle) >= Number(activeSubscription.video_limit_per_month)
   ) {
     return {
       allowed: false,
       statusCode: 402,
-      message: 'Your external posting plan post limit has been reached',
+      message: 'You have reached your plan limit. Upgrade your subscription to upload more videos.',
     };
   }
 
@@ -230,16 +237,16 @@ function canPostBuyNowLink(marketplaceAuth, buyNowUrl) {
   if (!marketplaceAuth) {
     return {
       allowed: false,
-      statusCode: 403,
-      message: 'Marketplace auth is required before posting external buy-now links',
+      statusCode: 402,
+      message: 'Subscribe to a plan to post external product links.',
     };
   }
 
   if (String(marketplaceAuth.auth_type || '').toLowerCase() !== 'external') {
     return {
       allowed: false,
-      statusCode: 403,
-      message: 'External buy-now links require external marketplace auth',
+      statusCode: 402,
+      message: 'Subscribe to a plan to post external product links.',
     };
   }
 
@@ -247,7 +254,7 @@ function canPostBuyNowLink(marketplaceAuth, buyNowUrl) {
     return {
       allowed: false,
       statusCode: 402,
-      message: 'External posting plan payment is required before posting external buy-now links',
+      message: 'Subscribe to a plan to post external product links.',
     };
   }
 
@@ -434,9 +441,14 @@ async function createVideo(req, res) {
       });
     }
 
+    const usesExternalLink =
+      buy_now_enabled == 1 &&
+      cleanBuyNowUrl &&
+      !isSupgadUrl(cleanBuyNowUrl);
+
     let externalPlanSubscription = null;
 
-    if (postingCheck.linkType === 'external') {
+    if (usesExternalLink) {
       const planCheck = await validateExternalPlanAccess(creatorProfile.id);
 
       if (!planCheck.allowed) {
@@ -474,9 +486,11 @@ async function createVideo(req, res) {
         comments_enabled,
         buy_now_enabled,
         buy_now_url,
+        uses_external_link,
+        external_link_subscription_required,
         is_monetized
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         videoUuid,
         creatorProfile.id,
@@ -499,6 +513,8 @@ async function createVideo(req, res) {
         comments_enabled !== undefined ? comments_enabled : 1,
         buy_now_enabled !== undefined ? buy_now_enabled : 1,
         cleanBuyNowUrl !== undefined ? cleanBuyNowUrl : null,
+        usesExternalLink ? 1 : 0,
+        usesExternalLink ? 1 : 0,
         is_monetized !== undefined ? is_monetized : 0,
       ]
     );
@@ -596,6 +612,10 @@ async function getPublicVideos(req, res) {
         v.comments_enabled,
         v.buy_now_enabled,
         v.buy_now_url,
+        v.uses_external_link,
+        v.external_link_subscription_required,
+        v.subscription_unpublished_at,
+        v.subscription_republished_at,
         v.is_monetized,
         v.published_at,
         v.created_at,
@@ -643,6 +663,10 @@ async function getPublicVideos(req, res) {
         comments_enabled: video.comments_enabled,
         buy_now_enabled: video.buy_now_enabled,
         buy_now_url: video.buy_now_url,
+        uses_external_link: Number(video.uses_external_link || 0),
+        external_link_subscription_required: Number(video.external_link_subscription_required || 0),
+        subscription_unpublished_at: video.subscription_unpublished_at,
+        subscription_republished_at: video.subscription_republished_at,
         is_monetized: video.is_monetized,
         published_at: video.published_at,
         created_at: video.created_at,
@@ -996,7 +1020,29 @@ async function updateMyVideo(req, res) {
 
     await pool.query(
       `UPDATE videos
-       SET channel_id = ?, category_id = ?, title = ?, slug = ?, description = ?, video_type = ?, source_type = ?, storage_provider = ?, video_key = ?, stream_key = ?, thumbnail_key = ?, preview_key = ?, duration_seconds = ?, visibility = ?, status = ?, moderation_status = ?, comments_enabled = ?, buy_now_enabled = ?, buy_now_url = ?, is_monetized = ?, published_at = ?
+       SET channel_id = ?,
+           category_id = ?,
+           title = ?,
+           slug = ?,
+           description = ?,
+           video_type = ?,
+           source_type = ?,
+           storage_provider = ?,
+           video_key = ?,
+           stream_key = ?,
+           thumbnail_key = ?,
+           preview_key = ?,
+           duration_seconds = ?,
+           visibility = ?,
+           status = ?,
+           moderation_status = ?,
+           comments_enabled = ?,
+           buy_now_enabled = ?,
+           buy_now_url = ?,
+           uses_external_link = ?,
+           external_link_subscription_required = ?,
+           is_monetized = ?,
+           published_at = ?
        WHERE id = ?`,
       [
         finalChannelId,
@@ -1018,6 +1064,8 @@ async function updateMyVideo(req, res) {
         comments_enabled !== undefined ? comments_enabled : currentVideo.comments_enabled,
         finalBuyNowEnabled,
         finalBuyNowUrl,
+        finalVideoUsesExternalLink ? 1 : 0,
+        finalVideoUsesExternalLink ? 1 : 0,
         is_monetized !== undefined ? is_monetized : currentVideo.is_monetized,
         published_at !== undefined ? published_at : currentVideo.published_at,
         currentVideo.id,

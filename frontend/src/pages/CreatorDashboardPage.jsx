@@ -100,6 +100,9 @@ function secondsToShortText(seconds) {
 
 function CreatorDashboardPage() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem('creator_dashboard_theme') || 'dark'
+  );
   const [channel, setChannel] = useState(null);
   const [summary, setSummary] = useState(null);
   const [latestVideos, setLatestVideos] = useState([]);
@@ -109,6 +112,10 @@ function CreatorDashboardPage() {
   const [marketplaceAuth, setMarketplaceAuth] = useState(null);
   const [externalPosting, setExternalPosting] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    localStorage.setItem('creator_dashboard_theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -150,6 +157,8 @@ function CreatorDashboardPage() {
 
     loadDashboard();
   }, []);
+
+  const isLight = theme === 'light';
 
   const channelName = getValue(channel, ['channel_name', 'name', 'title'], 'Creator');
   const channelHandle = getValue(channel, ['channel_handle', 'handle', 'username'], '');
@@ -226,6 +235,25 @@ function CreatorDashboardPage() {
     externalPosting?.is_active === true ||
     String(externalPosting?.status || '').toLowerCase() === 'active';
 
+  const currentPlanName =
+    externalPosting?.plan_name ||
+    externalPosting?.subscription?.plan_name ||
+    'No active plan';
+
+  const currentPlanUsage =
+    Number(
+      externalPosting?.videos_used_this_cycle ||
+      externalPosting?.subscription?.videos_used_this_cycle ||
+      0
+    );
+
+  const currentPlanLimit =
+    Number(
+      externalPosting?.video_limit_per_month ||
+      externalPosting?.subscription?.video_limit_per_month ||
+      0
+    );
+
   const lastProductCheck =
     getValue(
       marketplaceAuth,
@@ -242,7 +270,7 @@ function CreatorDashboardPage() {
 
   if (loading) {
     return (
-      <div className="videogad-dashboard-page">
+      <div className={`videogad-dashboard-page ${isLight ? 'creator-dashboard-theme-light' : ''}`}>
         <main className="videogad-dashboard-main">
           <div className="videogad-panel">
             <h2>Loading creator dashboard...</h2>
@@ -253,7 +281,7 @@ function CreatorDashboardPage() {
   }
 
   return (
-    <div className="videogad-dashboard-page">
+    <div className={`videogad-dashboard-page ${isLight ? 'creator-dashboard-theme-light' : ''}`}>
       <aside className={`videogad-dashboard-sidebar ${menuOpen ? 'open' : ''}`}>
         <div className="videogad-sidebar-top">
           <div className="videogad-brand">VideoGad</div>
@@ -278,6 +306,7 @@ function CreatorDashboardPage() {
           <a href="/creator-wallet">Wallet</a>
           <a href="/creator-earnings">Earnings</a>
           <a href="/creator-payout">Payout</a>
+          <a href="/creator-subscription">Subscription</a>
           <a href="/account-settings">Settings</a>
 
           {hasChannel ? (
@@ -326,7 +355,15 @@ function CreatorDashboardPage() {
             </div>
 
             <div className="videogad-dashboard-header-actions">
+              <button
+                type="button"
+                className="ghost-btn dashboard-theme-toggle-btn"
+                onClick={() => setTheme(isLight ? 'dark' : 'light')}
+              >
+                {isLight ? 'Dark Mode' : 'Light Mode'}
+              </button>
               <a href="/upload-video" className="primary-btn">Upload Video</a>
+              <a href="/creator-subscription" className="ghost-btn">Subscription</a>
               <a href="/creator-ads" className="ghost-btn">Manage Ads</a>
               <a href="/creator-ads-analytics" className="ghost-btn">Ads Analytics</a>
               <a href="/creator-wallet" className="ghost-btn">Wallet</a>
@@ -395,41 +432,46 @@ function CreatorDashboardPage() {
               <h2>Quick Actions</h2>
             </div>
 
-            <div className="quick-actions-list">
-              <div className="quick-action-card">
+            <div className="quick-actions-list quick-actions-compact">
+              <a href="/upload-video" className="quick-action-card quick-action-link">
                 <h4>Upload Video</h4>
                 <p>Add a new product video for viewers to watch and buy.</p>
-              </div>
+              </a>
 
-              <div className="quick-action-card">
+              <a href="/create-channel" className="quick-action-card quick-action-link">
                 <h4>{hasChannel ? 'Edit Channel' : 'Create Channel'}</h4>
                 <p>Set up your creator identity and storefront presence.</p>
-              </div>
+              </a>
 
-              <div className="quick-action-card">
+              <a href="/my-videos" className="quick-action-card quick-action-link">
                 <h4>My Videos</h4>
                 <p>Manage uploaded videos, edit details, and track status.</p>
-              </div>
+              </a>
 
-              <div className="quick-action-card">
+              <a href="/creator-ads" className="quick-action-card quick-action-link">
                 <h4>Ads</h4>
-                <p>Create ad campaigns, submit ad videos, and track ad performance.</p>
-              </div>
+                <p>Create ad campaigns and track ad performance.</p>
+              </a>
 
-              <div className="quick-action-card">
+              <a href="/creator-ads-analytics" className="quick-action-card quick-action-link">
                 <h4>Ads Analytics</h4>
-                <p>View real ad impressions, clicks, skips and campaign performance.</p>
-              </div>
+                <p>View real ad impressions, clicks and campaign performance.</p>
+              </a>
 
-              <div className="quick-action-card">
+              <a href="/creator-wallet" className="quick-action-card quick-action-link">
                 <h4>Wallet</h4>
-                <p>Top up your ad wallet and track every expenditure in one place.</p>
-              </div>
+                <p>Top up your ad wallet and track every expenditure.</p>
+              </a>
 
-              <div className="quick-action-card">
+              <a href="/creator-subscription" className="quick-action-card quick-action-link">
+                <h4>Subscription</h4>
+                <p>Choose a plan for external links and monthly upload limit.</p>
+              </a>
+
+              <a href="/creator-marketplace-auth" className="quick-action-card quick-action-link">
                 <h4>Marketplace Auth</h4>
                 <p>Verify your Supgad store or manage external link access.</p>
-              </div>
+              </a>
             </div>
           </div>
         </section>
@@ -514,12 +556,25 @@ function CreatorDashboardPage() {
               </div>
 
               <div className="marketplace-row">
+                <span>Current Plan</span>
+                <strong>{currentPlanName}</strong>
+              </div>
+
+              <div className="marketplace-row">
+                <span>Plan Usage</span>
+                <strong>{currentPlanUsage}/{currentPlanLimit || 0}</strong>
+              </div>
+
+              <div className="marketplace-row">
                 <span>Last Product Link Check</span>
                 <strong>{formatDateLabel(lastProductCheck)}</strong>
               </div>
 
               <a href="/creator-marketplace-auth" className="text-link">
                 Manage marketplace access
+              </a>
+              <a href="/creator-subscription" className="text-link dashboard-marketplace-link">
+                Manage subscription
               </a>
             </div>
           </div>

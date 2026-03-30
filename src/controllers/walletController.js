@@ -33,7 +33,76 @@ async function getOrCreateWallet(creatorUserId, connection = pool) {
 }
 
 function roundMoney(value) {
-  return Number((Number(value || 0)).toFixed(4));
+  return Number(Number(value || 0).toFixed(4));
+}
+
+function safeParseJson(value) {
+  if (!value) return null;
+
+  try {
+    return typeof value === 'string' ? JSON.parse(value) : value;
+  } catch (error) {
+    return null;
+  }
+}
+
+function startOfDay(dateValue) {
+  const date = new Date(dateValue);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function endOfDay(dateValue) {
+  const date = new Date(dateValue);
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
+function toMySqlDateTime(dateValue) {
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  const second = String(date.getSeconds()).padStart(2, '0');
+
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+
+function buildWalletDateRange(fromDateInput, toDateInput) {
+  const now = new Date();
+
+  let fromDate;
+  let toDate;
+
+  if (fromDateInput || toDateInput) {
+    fromDate = fromDateInput ? startOfDay(fromDateInput) : startOfDay(now);
+    toDate = toDateInput ? endOfDay(toDateInput) : endOfDay(now);
+  } else {
+    toDate = endOfDay(now);
+    fromDate = startOfDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000));
+  }
+
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return null;
+  }
+
+  if (fromDate.getTime() > toDate.getTime()) {
+    return null;
+  }
+
+  return {
+    from_date: toMySqlDateTime(fromDate),
+    to_date: toMySqlDateTime(toDate),
+    from_date_display: fromDate.toISOString(),
+    to_date_display: toDate.toISOString(),
+  };
 }
 
 async function debitWalletForAdSpend({
@@ -147,22 +216,93 @@ async function getMyWallet(req, res) {
 
     const wallet = await getOrCreateWallet(creatorUserId);
 
+    const range = buildWalletDateRange(
+      req.query?.from_date || '',
+      req.query?.to_date || ''
+    );
+
+    if (!range) {
+      return res.status(400).json({
+        message: 'Invalid date range supplied',
+      });
+    }
+
     const [transactions] = await pool.query(
       `SELECT *
        FROM creator_wallet_transactions
        WHERE creator_user_id = ?
+         AND created_at BETWEEN ? AND ?
        ORDER BY id DESC
-       LIMIT 50`,
-      [creatorUserId]
+       LIMIT 100`,
+      [creatorUserId, range.from_date, range.to_date]
     );
+
+    const normalizedTransactions = transactions.map((item) => ({
+      ...item,
+      metadata: safeParseJson(item.metadata_json),
+    }));
 
     return res.status(200).json({
       wallet,
-      transactions,
+      transactions: normalizedTransactions,
+      filters: {
+        from_date: range.from_date_display,
+        to_date: range.to_date_display,
+        default_range: !req.query?.from_date && !req.query?.to_date ? 'last_7_days' : 'custom',
+      },
+      transaction_count: normalizedTransactions.length,
     });
   } catch (error) {
     return res.status(500).json({
       message: 'Failed to fetch wallet',
+      error: error.message,
+    });
+  }
+}
+
+async function getMyWalletTransactionById(req, res) {
+  try {
+    const creatorUserId = Number(req.user?.id || 0);
+    const transactionId = Number(req.params?.transactionId || 0);
+
+    if (!creatorUserId) {
+      return res.status(401).json({
+        message: 'Authenticated creator user is required',
+      });
+    }
+
+    if (!transactionId) {
+      return res.status(400).json({
+        message: 'Valid transaction id is required',
+      });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT *
+       FROM creator_wallet_transactions
+       WHERE id = ?
+         AND creator_user_id = ?
+       LIMIT 1`,
+      [transactionId, creatorUserId]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        message: 'Transaction not found',
+      });
+    }
+
+    const transaction = {
+      ...rows[0],
+      metadata: safeParseJson(rows[0].metadata_json),
+    };
+
+    return res.status(200).json({
+      transaction,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to fetch transaction',
       error: error.message,
     });
   }
@@ -245,9 +385,63 @@ async function topUpMyWallet(req, res) {
   }
 }
 
+async function deleteMyWalletTransaction(req, res) {
+  try {
+    const creatorUserId = Number(req.user?.id || 0);
+    const transactionId = Number(req.params?.transactionId || 0);
+
+    if (!creatorUserId) {
+      return res.status(401).json({
+        message: 'Authenticated creator user is required',
+      });
+    }
+
+    if (!transactionId) {
+      return res.status(400).json({
+        message: 'Valid transaction id is required',
+      });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT *
+       FROM creator_wallet_transactions
+       WHERE id = ?
+         AND creator_user_id = ?
+       LIMIT 1`,
+      [transactionId, creatorUserId]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        message: 'Transaction not found',
+      });
+    }
+
+    await pool.query(
+      `DELETE FROM creator_wallet_transactions
+       WHERE id = ?
+         AND creator_user_id = ?
+       LIMIT 1`,
+      [transactionId, creatorUserId]
+    );
+
+    return res.status(200).json({
+      message: 'Transaction deleted successfully',
+      deleted_transaction_id: transactionId,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to delete transaction',
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   getOrCreateWallet,
   debitWalletForAdSpend,
   getMyWallet,
+  getMyWalletTransactionById,
   topUpMyWallet,
+  deleteMyWalletTransaction,
 };

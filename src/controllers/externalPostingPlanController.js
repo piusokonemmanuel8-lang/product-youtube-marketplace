@@ -14,6 +14,93 @@ async function getCreatorProfileByUserId(userId) {
   return rows[0];
 }
 
+async function getPlanById(planId) {
+  const [rows] = await pool.query(
+    `SELECT *
+     FROM external_posting_plans
+     WHERE id = ? AND status = 'active'
+     LIMIT 1`,
+    [planId]
+  );
+
+  if (!rows.length) {
+    return null;
+  }
+
+  return rows[0];
+}
+
+async function expireCreatorExternalVideos(creatorId) {
+  await pool.query(
+    `UPDATE videos
+     SET status = 'draft',
+         subscription_unpublished_at = NOW()
+     WHERE creator_id = ?
+       AND uses_external_link = 1
+       AND external_link_subscription_required = 1
+       AND status = 'published'`,
+    [creatorId]
+  );
+}
+
+async function republishCreatorExternalVideos(creatorId) {
+  await pool.query(
+    `UPDATE videos
+     SET status = 'published',
+         subscription_republished_at = NOW(),
+         published_at = CASE
+           WHEN published_at IS NULL THEN NOW()
+           ELSE published_at
+         END
+     WHERE creator_id = ?
+       AND uses_external_link = 1
+       AND external_link_subscription_required = 1
+       AND moderation_status = 'approved'
+       AND status = 'draft'`,
+    [creatorId]
+  );
+}
+
+async function ensureLatestSubscriptionState(creatorId) {
+  const [rows] = await pool.query(
+    `SELECT *
+     FROM creator_plan_subscriptions
+     WHERE creator_id = ?
+     ORDER BY id DESC
+     LIMIT 1`,
+    [creatorId]
+  );
+
+  if (!rows.length) {
+    return null;
+  }
+
+  const subscription = rows[0];
+  const status = String(subscription.status || '').toLowerCase();
+
+  if (
+    status === 'active' &&
+    subscription.ends_at &&
+    new Date(subscription.ends_at).getTime() < Date.now()
+  ) {
+    await pool.query(
+      `UPDATE creator_plan_subscriptions
+       SET status = 'expired'
+       WHERE id = ?`,
+      [subscription.id]
+    );
+
+    await expireCreatorExternalVideos(creatorId);
+
+    return {
+      ...subscription,
+      status: 'expired',
+    };
+  }
+
+  return subscription;
+}
+
 async function subscribeToExternalPostingPlan(req, res) {
   try {
     const userId = req.user.id;
@@ -33,21 +120,14 @@ async function subscribeToExternalPostingPlan(req, res) {
       });
     }
 
-    const [plans] = await pool.query(
-      `SELECT *
-       FROM external_posting_plans
-       WHERE id = ? AND status = 'active'
-       LIMIT 1`,
-      [plan_id]
-    );
+    const plan = await getPlanById(plan_id);
 
-    if (!plans.length) {
+    if (!plan) {
       return res.status(404).json({
         message: 'External posting plan not found',
       });
     }
 
-    const plan = plans[0];
     const paymentReference = `EXTPLAN-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
     const [subscriptionResult] = await pool.query(
@@ -58,12 +138,14 @@ async function subscribeToExternalPostingPlan(req, res) {
         status,
         starts_at,
         ends_at,
-        posts_used,
+        renewed_at,
+        videos_used_this_cycle,
         amount_paid,
         currency_code,
-        payment_reference
+        payment_reference,
+        last_cycle_reset_at
       )
-      VALUES (?, ?, 'pending', NULL, NULL, 0, ?, ?, ?)`,
+      VALUES (?, ?, 'pending', NULL, NULL, NULL, 0, ?, ?, ?, NULL)`,
       [
         creatorProfile.id,
         plan.id,
@@ -99,7 +181,17 @@ async function subscribeToExternalPostingPlan(req, res) {
     );
 
     const [subscriptions] = await pool.query(
-      'SELECT * FROM creator_plan_subscriptions WHERE id = ? LIMIT 1',
+      `SELECT
+         cps.*,
+         epp.name AS plan_name,
+         epp.duration_type,
+         epp.duration_days,
+         epp.video_limit_per_month,
+         epp.price AS plan_price
+       FROM creator_plan_subscriptions cps
+       INNER JOIN external_posting_plans epp ON cps.plan_id = epp.id
+       WHERE cps.id = ?
+       LIMIT 1`,
       [subscriptionResult.insertId]
     );
 
@@ -112,7 +204,11 @@ async function subscribeToExternalPostingPlan(req, res) {
       message: 'External posting plan subscription created successfully',
       subscription: subscriptions[0],
       payment: payments[0],
-      plan,
+      plan: {
+        ...plan,
+        price: Number(plan.price || 0),
+        video_limit_per_month: Number(plan.video_limit_per_month || 0),
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -134,8 +230,16 @@ async function getMyExternalPostingSubscription(req, res) {
       });
     }
 
+    await ensureLatestSubscriptionState(creatorProfile.id);
+
     const [rows] = await pool.query(
-      `SELECT cps.*, epp.name AS plan_name, epp.duration_type, epp.duration_days, epp.post_limit, epp.price
+      `SELECT
+         cps.*,
+         epp.name AS plan_name,
+         epp.duration_type,
+         epp.duration_days,
+         epp.video_limit_per_month,
+         epp.price
        FROM creator_plan_subscriptions cps
        INNER JOIN external_posting_plans epp ON cps.plan_id = epp.id
        WHERE cps.creator_id = ?
@@ -151,7 +255,13 @@ async function getMyExternalPostingSubscription(req, res) {
     }
 
     return res.status(200).json({
-      subscription: rows[0],
+      subscription: {
+        ...rows[0],
+        price: Number(rows[0].price || 0),
+        amount_paid: Number(rows[0].amount_paid || 0),
+        video_limit_per_month: Number(rows[0].video_limit_per_month || 0),
+        videos_used_this_cycle: Number(rows[0].videos_used_this_cycle || 0),
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -174,7 +284,11 @@ async function getMyExternalPostingPayments(req, res) {
     }
 
     const [rows] = await pool.query(
-      `SELECT csp.*, epp.name AS plan_name
+      `SELECT
+         csp.*,
+         epp.name AS plan_name,
+         epp.video_limit_per_month,
+         epp.price AS plan_price
        FROM creator_subscription_payments csp
        INNER JOIN external_posting_plans epp ON csp.plan_id = epp.id
        WHERE csp.creator_id = ?
@@ -183,7 +297,12 @@ async function getMyExternalPostingPayments(req, res) {
     );
 
     return res.status(200).json({
-      payments: rows,
+      payments: rows.map((row) => ({
+        ...row,
+        amount: Number(row.amount || 0),
+        plan_price: Number(row.plan_price || 0),
+        video_limit_per_month: Number(row.video_limit_per_month || 0),
+      })),
     });
   } catch (error) {
     return res.status(500).json({
@@ -228,23 +347,16 @@ async function markExternalPostingPaymentPaid(req, res) {
       });
     }
 
-    const [plans] = await pool.query(
-      `SELECT *
-       FROM external_posting_plans
-       WHERE id = ?
-       LIMIT 1`,
-      [payment.plan_id]
-    );
+    const plan = await getPlanById(payment.plan_id);
 
-    if (!plans.length) {
+    if (!plan) {
       return res.status(404).json({
         message: 'External posting plan not found',
       });
     }
 
-    const plan = plans[0];
     const now = new Date();
-    const endsAt = new Date(now.getTime() + (Number(plan.duration_days) * 24 * 60 * 60 * 1000));
+    const endsAt = new Date(now.getTime() + (Number(plan.duration_days || 30) * 24 * 60 * 60 * 1000));
 
     await pool.query(
       `UPDATE creator_subscription_payments
@@ -259,14 +371,19 @@ async function markExternalPostingPaymentPaid(req, res) {
        SET status = 'active',
            starts_at = ?,
            ends_at = ?,
+           renewed_at = ?,
            amount_paid = ?,
-           currency_code = ?
+           currency_code = ?,
+           videos_used_this_cycle = 0,
+           last_cycle_reset_at = ?
        WHERE id = ?`,
       [
         now,
         endsAt,
+        now,
         payment.amount,
         payment.currency_code,
+        now,
         payment.creator_subscription_id,
       ]
     );
@@ -308,8 +425,20 @@ async function markExternalPostingPaymentPaid(req, res) {
       );
     }
 
+    await republishCreatorExternalVideos(creatorProfile.id);
+
     const [updatedSubscriptions] = await pool.query(
-      'SELECT * FROM creator_plan_subscriptions WHERE id = ? LIMIT 1',
+      `SELECT
+         cps.*,
+         epp.name AS plan_name,
+         epp.duration_type,
+         epp.duration_days,
+         epp.video_limit_per_month,
+         epp.price
+       FROM creator_plan_subscriptions cps
+       INNER JOIN external_posting_plans epp ON cps.plan_id = epp.id
+       WHERE cps.id = ?
+       LIMIT 1`,
       [payment.creator_subscription_id]
     );
 
@@ -320,8 +449,17 @@ async function markExternalPostingPaymentPaid(req, res) {
 
     return res.status(200).json({
       message: 'External posting payment marked as paid successfully',
-      subscription: updatedSubscriptions[0],
-      payment: updatedPayments[0],
+      subscription: {
+        ...updatedSubscriptions[0],
+        price: Number(updatedSubscriptions[0].price || 0),
+        amount_paid: Number(updatedSubscriptions[0].amount_paid || 0),
+        video_limit_per_month: Number(updatedSubscriptions[0].video_limit_per_month || 0),
+        videos_used_this_cycle: Number(updatedSubscriptions[0].videos_used_this_cycle || 0),
+      },
+      payment: {
+        ...updatedPayments[0],
+        amount: Number(updatedPayments[0].amount || 0),
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -336,4 +474,7 @@ module.exports = {
   getMyExternalPostingSubscription,
   getMyExternalPostingPayments,
   markExternalPostingPaymentPaid,
+  expireCreatorExternalVideos,
+  republishCreatorExternalVideos,
+  ensureLatestSubscriptionState,
 };

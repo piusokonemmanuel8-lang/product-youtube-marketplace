@@ -88,6 +88,25 @@ function getSavedTheme() {
   }
 }
 
+function titleStyle(isLight) {
+  return {
+    color: isLight ? '#111827' : '#ffffff',
+    opacity: 1,
+    visibility: 'visible',
+    display: 'block',
+    fontSize: '1.15rem',
+    fontWeight: 800,
+    lineHeight: 1.2,
+    margin: 0,
+  };
+}
+
+function mutedStyle(isLight) {
+  return {
+    color: isLight ? '#475569' : '#d7deef',
+  };
+}
+
 function CreatorAdsAnalyticsPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [campaigns, setCampaigns] = useState([]);
@@ -98,6 +117,45 @@ function CreatorAdsAnalyticsPage() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [error, setError] = useState('');
   const [themeMode, setThemeMode] = useState(getSavedTheme());
+
+  const isLight = themeMode === 'light';
+
+  const pageStyle = {
+    background: isLight ? '#f5f7fb' : '#0f1117',
+    color: isLight ? '#111827' : '#ffffff',
+    minHeight: '100vh',
+  };
+
+  const sidebarStyle = {
+    background: isLight ? '#ffffff' : '#141824',
+    borderRight: isLight
+      ? '1px solid rgba(15, 23, 42, 0.08)'
+      : '1px solid rgba(255, 255, 255, 0.06)',
+  };
+
+  const panelStyle = {
+    background: isLight ? '#ffffff' : '#171c29',
+    border: isLight
+      ? '1px solid rgba(15, 23, 42, 0.08)'
+      : '1px solid rgba(255, 255, 255, 0.06)',
+    color: isLight ? '#111827' : '#ffffff',
+  };
+
+  const innerBoxStyle = {
+    background: isLight ? '#f8fafc' : '#111521',
+    border: isLight
+      ? '1px solid rgba(15, 23, 42, 0.08)'
+      : '1px solid rgba(255, 255, 255, 0.08)',
+    color: isLight ? '#111827' : '#ffffff',
+  };
+
+  const ghostBtnStyle = {
+    border: isLight
+      ? '1px solid rgba(15, 23, 42, 0.12)'
+      : '1px solid rgba(255, 255, 255, 0.14)',
+    color: isLight ? '#111827' : '#ffffff',
+    background: isLight ? '#ffffff' : 'transparent',
+  };
 
   useEffect(() => {
     async function loadPage() {
@@ -142,40 +200,6 @@ function CreatorAdsAnalyticsPage() {
     } catch (error) {}
   }, [themeMode]);
 
-  useEffect(() => {
-    async function loadStats() {
-      if (!campaigns.length) return;
-
-      try {
-        setStatsLoading(true);
-
-        const results = await Promise.all(
-          campaigns.map(async (campaign) => {
-            const campaignId = Number(campaign.id);
-
-            try {
-              const response = await creatorAdsService.getCampaignStats(campaignId);
-              return [campaignId, response?.stats || null];
-            } catch (err) {
-              return [campaignId, null];
-            }
-          })
-        );
-
-        const nextStatsMap = {};
-        for (const [campaignId, stats] of results) {
-          nextStatsMap[campaignId] = stats;
-        }
-
-        setStatsMap(nextStatsMap);
-      } finally {
-        setStatsLoading(false);
-      }
-    }
-
-    loadStats();
-  }, [campaigns]);
-
   const videosByCampaign = useMemo(() => groupVideosByCampaign(adVideos), [adVideos]);
 
   const selectedCampaign = useMemo(() => {
@@ -210,6 +234,40 @@ function CreatorAdsAnalyticsPage() {
     };
   }, [campaigns, adVideos, statsMap]);
 
+  useEffect(() => {
+    async function loadStats() {
+      if (!campaigns.length) return;
+
+      try {
+        setStatsLoading(true);
+
+        const results = await Promise.all(
+          campaigns.map(async (campaign) => {
+            const campaignId = Number(campaign.id);
+
+            try {
+              const response = await creatorAdsService.getCampaignStats(campaignId);
+              return [campaignId, response?.stats || null];
+            } catch (err) {
+              return [campaignId, null];
+            }
+          })
+        );
+
+        const nextStatsMap = {};
+        for (const [campaignId, stats] of results) {
+          nextStatsMap[campaignId] = stats;
+        }
+
+        setStatsMap(nextStatsMap);
+      } finally {
+        setStatsLoading(false);
+      }
+    }
+
+    loadStats();
+  }, [campaigns]);
+
   function handleLogout() {
     localStorage.removeItem('token');
     localStorage.removeItem('videogad_token');
@@ -222,60 +280,82 @@ function CreatorAdsAnalyticsPage() {
   }
 
   return (
-    <div className={`videogad-dashboard-page ads-analytics-theme-${themeMode}`}>
-      <aside className={`videogad-dashboard-sidebar ${menuOpen ? 'open' : ''}`}>
+    <div className="videogad-dashboard-page" style={pageStyle}>
+      <aside className={`videogad-dashboard-sidebar ${menuOpen ? 'open' : ''}`} style={sidebarStyle}>
         <div className="videogad-sidebar-top">
-          <div className="videogad-brand">VideoGad</div>
+          <div className="videogad-brand" style={{ color: isLight ? '#111827' : '#ffffff' }}>VideoGad</div>
 
           <button
             className="videogad-close-menu"
             onClick={() => setMenuOpen(false)}
             type="button"
+            style={{
+              background: isLight ? '#eef2ff' : '#1d2333',
+              color: isLight ? '#111827' : '#ffffff',
+            }}
           >
             ✕
           </button>
         </div>
 
         <nav className="videogad-dashboard-nav">
-          <a href="/creator-dashboard">Dashboard</a>
-          <a href="/create-channel">Edit Channel</a>
-          <a href="/upload-video">Upload Video</a>
-          <a href="/my-videos">My Videos</a>
-          <a href="/creator-analytics">Analytics</a>
-          <a href="/creator-ads">Ads</a>
-          <a href="/creator-ads-analytics" className="active">Ads Analytics</a>
-          <a href="/creator-earnings">Earnings</a>
-          <a href="/creator-payout">Payout</a>
-          <a href="/account-settings">Settings</a>
+          <a href="/creator-dashboard" style={{ color: isLight ? '#475569' : '#b9c0d4' }}>Dashboard</a>
+          <a href="/create-channel" style={{ color: isLight ? '#475569' : '#b9c0d4' }}>Edit Channel</a>
+          <a href="/upload-video" style={{ color: isLight ? '#475569' : '#b9c0d4' }}>Upload Video</a>
+          <a href="/my-videos" style={{ color: isLight ? '#475569' : '#b9c0d4' }}>My Videos</a>
+          <a href="/creator-analytics" style={{ color: isLight ? '#475569' : '#b9c0d4' }}>Analytics</a>
+          <a href="/creator-ads" style={{ color: isLight ? '#475569' : '#b9c0d4' }}>Ads</a>
+          <a
+            href="/creator-ads-analytics"
+            className="active"
+            style={{
+              color: isLight ? '#111827' : '#ffffff',
+              background: isLight ? '#eef2ff' : undefined,
+            }}
+          >
+            Ads Analytics
+          </a>
+          <a href="/creator-earnings" style={{ color: isLight ? '#475569' : '#b9c0d4' }}>Earnings</a>
+          <a href="/creator-payout" style={{ color: isLight ? '#475569' : '#b9c0d4' }}>Payout</a>
+          <a href="/account-settings" style={{ color: isLight ? '#475569' : '#b9c0d4' }}>Settings</a>
 
           <button
             type="button"
             className="dashboard-logout-btn"
             onClick={handleLogout}
+            style={{ color: isLight ? '#111827' : '#ffffff' }}
           >
             Logout
           </button>
         </nav>
       </aside>
 
-      <main className="videogad-dashboard-main">
+      <main className="videogad-dashboard-main" style={{ background: isLight ? '#f5f7fb' : '#0f1117' }}>
         <header className="videogad-dashboard-header">
           <div className="videogad-mobile-topbar">
             <button
               className="videogad-menu-toggle"
               onClick={() => setMenuOpen(true)}
               type="button"
+              style={{
+                background: isLight ? '#eef2ff' : '#1d2333',
+                color: isLight ? '#111827' : '#ffffff',
+              }}
             >
               ☰
             </button>
-            <div className="videogad-mobile-brand">VideoGad</div>
+            <div className="videogad-mobile-brand" style={{ color: isLight ? '#111827' : '#ffffff' }}>
+              VideoGad
+            </div>
           </div>
 
           <div className="videogad-header-main">
             <div>
-              <p className="eyebrow">Creator Studio</p>
-              <h1>Ads Analytics</h1>
-              <span>Real campaign performance, clicks, skips, impressions and ad videos.</span>
+              <p className="eyebrow" style={{ color: isLight ? '#475569' : '#b6bed1' }}>Creator Studio</p>
+              <h1 style={{ color: isLight ? '#111827' : '#ffffff' }}>Ads Analytics</h1>
+              <span style={{ color: isLight ? '#475569' : '#b6bed1' }}>
+                Real campaign performance, clicks, skips, impressions and ad videos.
+              </span>
             </div>
 
             <div className="videogad-dashboard-header-actions">
@@ -283,6 +363,7 @@ function CreatorAdsAnalyticsPage() {
                 type="button"
                 className="ghost-btn ads-theme-toggle-btn"
                 onClick={toggleThemeMode}
+                style={ghostBtnStyle}
               >
                 {themeMode === 'dark' ? 'Light Mode' : 'Dark Mode'}
               </button>
@@ -293,52 +374,52 @@ function CreatorAdsAnalyticsPage() {
         </header>
 
         {error ? (
-          <section className="videogad-panel">
-            <div className="dashboard-empty-box">{error}</div>
+          <section className="videogad-panel" style={panelStyle}>
+            <div className="dashboard-empty-box" style={innerBoxStyle}>{error}</div>
           </section>
         ) : null}
 
         <section className="videogad-stats-grid">
-          <div className="videogad-stat-card">
-            <p>Total Campaigns</p>
-            <h3>{formatNumber(overall.total_campaigns)}</h3>
-            <span>Creator campaigns</span>
+          <div className="videogad-stat-card" style={panelStyle}>
+            <p style={mutedStyle(isLight)}>Total Campaigns</p>
+            <h3 style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatNumber(overall.total_campaigns)}</h3>
+            <span style={mutedStyle(isLight)}>Creator campaigns</span>
           </div>
 
-          <div className="videogad-stat-card">
-            <p>Total Ad Videos</p>
-            <h3>{formatNumber(overall.total_ad_videos)}</h3>
-            <span>Videos used for ads</span>
+          <div className="videogad-stat-card" style={panelStyle}>
+            <p style={mutedStyle(isLight)}>Total Ad Videos</p>
+            <h3 style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatNumber(overall.total_ad_videos)}</h3>
+            <span style={mutedStyle(isLight)}>Videos used for ads</span>
           </div>
 
-          <div className="videogad-stat-card">
-            <p>Total Impressions</p>
-            <h3>{formatNumber(overall.total_impressions)}</h3>
-            <span>Real delivery count</span>
+          <div className="videogad-stat-card" style={panelStyle}>
+            <p style={mutedStyle(isLight)}>Total Impressions</p>
+            <h3 style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatNumber(overall.total_impressions)}</h3>
+            <span style={mutedStyle(isLight)}>Real delivery count</span>
           </div>
 
-          <div className="videogad-stat-card">
-            <p>Total Clicks</p>
-            <h3>{formatNumber(overall.total_clicks)}</h3>
-            <span>Ad click actions</span>
+          <div className="videogad-stat-card" style={panelStyle}>
+            <p style={mutedStyle(isLight)}>Total Clicks</p>
+            <h3 style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatNumber(overall.total_clicks)}</h3>
+            <span style={mutedStyle(isLight)}>Ad click actions</span>
           </div>
 
-          <div className="videogad-stat-card">
-            <p>Total Skips</p>
-            <h3>{formatNumber(overall.total_skips)}</h3>
-            <span>Viewer skips</span>
+          <div className="videogad-stat-card" style={panelStyle}>
+            <p style={mutedStyle(isLight)}>Total Skips</p>
+            <h3 style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatNumber(overall.total_skips)}</h3>
+            <span style={mutedStyle(isLight)}>Viewer skips</span>
           </div>
         </section>
 
         <section className="videogad-dashboard-content-grid">
-          <div className="videogad-panel large">
+          <div className="videogad-panel large" style={panelStyle}>
             <div className="panel-head">
-              <h2>My Ad Campaigns</h2>
-              {statsLoading ? <span>Loading stats...</span> : <span>{campaigns.length} campaigns</span>}
+              <div style={titleStyle(isLight)}>My Ad Campaigns</div>
+              <span style={mutedStyle(isLight)}>{statsLoading ? 'Loading stats...' : `${campaigns.length} campaigns`}</span>
             </div>
 
             {loading ? (
-              <div className="dashboard-empty-box">Loading campaigns...</div>
+              <div className="dashboard-empty-box" style={innerBoxStyle}>Loading campaigns...</div>
             ) : campaigns.length ? (
               <div className="videogad-video-table">
                 {campaigns.map((campaign) => {
@@ -352,13 +433,14 @@ function CreatorAdsAnalyticsPage() {
                       type="button"
                       onClick={() => setSelectedCampaignId(campaignId)}
                       className={`videogad-video-row ads-analytics-row ${isActive ? 'ads-analytics-row-active' : ''}`}
+                      style={innerBoxStyle}
                     >
                       <div className="video-main">
                         <div className="video-thumb-placeholder">AD</div>
 
                         <div className="ads-analytics-main-copy">
-                          <h4>{pickCampaignTitle(campaign)}</h4>
-                          <p>
+                          <h4 style={{ color: isLight ? '#111827' : '#ffffff' }}>{pickCampaignTitle(campaign)}</h4>
+                          <p style={mutedStyle(isLight)}>
                             {campaign?.advertiser_name || 'Advertiser'} • {formatDate(campaign?.created_at)}
                           </p>
                         </div>
@@ -368,92 +450,92 @@ function CreatorAdsAnalyticsPage() {
                         <span className={`status-badge ${getStatusClass(campaign?.status)}`}>
                           {formatStatus(campaign?.status)}
                         </span>
-                        <span>{formatNumber(stats?.total_impressions)} impressions</span>
-                        <span>{formatNumber(stats?.total_clicks)} clicks</span>
-                        <span>{formatNumber(stats?.total_skips)} skips</span>
+                        <span style={mutedStyle(isLight)}>{formatNumber(stats?.total_impressions)} impressions</span>
+                        <span style={mutedStyle(isLight)}>{formatNumber(stats?.total_clicks)} clicks</span>
+                        <span style={mutedStyle(isLight)}>{formatNumber(stats?.total_skips)} skips</span>
                       </div>
                     </button>
                   );
                 })}
               </div>
             ) : (
-              <div className="dashboard-empty-box">No ad campaigns yet.</div>
+              <div className="dashboard-empty-box" style={innerBoxStyle}>No ad campaigns yet.</div>
             )}
           </div>
 
-          <div className="videogad-panel">
+          <div className="videogad-panel" style={panelStyle}>
             <div className="panel-head">
-              <h2>Selected Campaign</h2>
+              <div style={titleStyle(isLight)}>Selected Campaign</div>
             </div>
 
             {selectedCampaign ? (
-              <div className="marketplace-status-box ads-analytics-selected-box">
+              <div className="marketplace-status-box ads-analytics-selected-box" style={innerBoxStyle}>
                 <div className="marketplace-row">
-                  <span>Campaign</span>
-                  <strong>{pickCampaignTitle(selectedCampaign)}</strong>
+                  <span style={mutedStyle(isLight)}>Campaign</span>
+                  <strong style={{ color: isLight ? '#111827' : '#ffffff' }}>{pickCampaignTitle(selectedCampaign)}</strong>
                 </div>
 
                 <div className="marketplace-row">
-                  <span>Status</span>
-                  <strong>{formatStatus(selectedCampaign?.status)}</strong>
+                  <span style={mutedStyle(isLight)}>Status</span>
+                  <strong style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatStatus(selectedCampaign?.status)}</strong>
                 </div>
 
                 <div className="marketplace-row">
-                  <span>Impressions</span>
-                  <strong>{formatNumber(selectedStats?.total_impressions)}</strong>
+                  <span style={mutedStyle(isLight)}>Impressions</span>
+                  <strong style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatNumber(selectedStats?.total_impressions)}</strong>
                 </div>
 
                 <div className="marketplace-row">
-                  <span>Clicks</span>
-                  <strong>{formatNumber(selectedStats?.total_clicks)}</strong>
+                  <span style={mutedStyle(isLight)}>Clicks</span>
+                  <strong style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatNumber(selectedStats?.total_clicks)}</strong>
                 </div>
 
                 <div className="marketplace-row">
-                  <span>Skips</span>
-                  <strong>{formatNumber(selectedStats?.total_skips)}</strong>
+                  <span style={mutedStyle(isLight)}>Skips</span>
+                  <strong style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatNumber(selectedStats?.total_skips)}</strong>
                 </div>
 
                 <div className="marketplace-row">
-                  <span>CTR</span>
-                  <strong>{calcCtr(selectedStats?.total_clicks, selectedStats?.total_impressions)}</strong>
+                  <span style={mutedStyle(isLight)}>CTR</span>
+                  <strong style={{ color: isLight ? '#111827' : '#ffffff' }}>{calcCtr(selectedStats?.total_clicks, selectedStats?.total_impressions)}</strong>
                 </div>
 
                 <div className="marketplace-row">
-                  <span>Skip Rate</span>
-                  <strong>{calcSkipRate(selectedStats?.total_skips, selectedStats?.total_impressions)}</strong>
+                  <span style={mutedStyle(isLight)}>Skip Rate</span>
+                  <strong style={{ color: isLight ? '#111827' : '#ffffff' }}>{calcSkipRate(selectedStats?.total_skips, selectedStats?.total_impressions)}</strong>
                 </div>
 
                 <div className="marketplace-row">
-                  <span>Ad Videos</span>
-                  <strong>{formatNumber(selectedVideos.length)}</strong>
+                  <span style={mutedStyle(isLight)}>Ad Videos</span>
+                  <strong style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatNumber(selectedVideos.length)}</strong>
                 </div>
 
                 <div className="marketplace-row">
-                  <span>Start Date</span>
-                  <strong>{formatDate(selectedCampaign?.starts_at)}</strong>
+                  <span style={mutedStyle(isLight)}>Start Date</span>
+                  <strong style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatDate(selectedCampaign?.starts_at)}</strong>
                 </div>
 
                 <div className="marketplace-row">
-                  <span>End Date</span>
-                  <strong>{formatDate(selectedCampaign?.ends_at)}</strong>
+                  <span style={mutedStyle(isLight)}>End Date</span>
+                  <strong style={{ color: isLight ? '#111827' : '#ffffff' }}>{formatDate(selectedCampaign?.ends_at)}</strong>
                 </div>
               </div>
             ) : (
-              <div className="dashboard-empty-box">Select a campaign to view analytics.</div>
+              <div className="dashboard-empty-box" style={innerBoxStyle}>Select a campaign to view analytics.</div>
             )}
           </div>
         </section>
 
-        <section className="videogad-panel">
+        <section className="videogad-panel" style={panelStyle}>
           <div className="panel-head">
-            <h2>Ad Videos In Selected Campaign</h2>
+            <div style={titleStyle(isLight)}>Ad Videos In Selected Campaign</div>
           </div>
 
           {selectedCampaign ? (
             selectedVideos.length ? (
               <div className="videogad-video-table">
                 {selectedVideos.map((video) => (
-                  <div className="videogad-video-row ads-analytics-video-row" key={video.id}>
+                  <div className="videogad-video-row ads-analytics-video-row" key={video.id} style={innerBoxStyle}>
                     <div className="video-main">
                       {video?.thumbnail_key ? (
                         <img
@@ -466,8 +548,8 @@ function CreatorAdsAnalyticsPage() {
                       )}
 
                       <div className="ads-analytics-main-copy">
-                        <h4>{pickVideoTitle(video)}</h4>
-                        <p>
+                        <h4 style={{ color: isLight ? '#111827' : '#ffffff' }}>{pickVideoTitle(video)}</h4>
+                        <p style={mutedStyle(isLight)}>
                           Duration: {formatNumber(video?.duration_seconds)}s • Created: {formatDate(video?.created_at)}
                         </p>
                       </div>
@@ -477,16 +559,16 @@ function CreatorAdsAnalyticsPage() {
                       <span className={`status-badge ${getStatusClass(video?.status)}`}>
                         {formatStatus(video?.status)}
                       </span>
-                      <span>{video?.campaign_title || pickCampaignTitle(selectedCampaign)}</span>
+                      <span style={mutedStyle(isLight)}>{video?.campaign_title || pickCampaignTitle(selectedCampaign)}</span>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="dashboard-empty-box">No ad videos found for this campaign.</div>
+              <div className="dashboard-empty-box" style={innerBoxStyle}>No ad videos found for this campaign.</div>
             )
           ) : (
-            <div className="dashboard-empty-box">Select a campaign first.</div>
+            <div className="dashboard-empty-box" style={innerBoxStyle}>Select a campaign first.</div>
           )}
         </section>
       </main>

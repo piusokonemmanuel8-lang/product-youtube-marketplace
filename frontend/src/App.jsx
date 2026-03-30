@@ -18,6 +18,7 @@ import CreatorWalletPage from './pages/CreatorWalletPage';
 import CreatorEarningsPage from './pages/CreatorEarningsPage';
 import CreatorPayoutPage from './pages/CreatorPayoutPage';
 import CreatorMarketplaceAuthPage from './pages/CreatorMarketplaceAuthPage';
+import CreatorSubscriptionPage from './pages/CreatorSubscriptionPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 
@@ -67,6 +68,10 @@ function App() {
 
   if (path === '/creator-marketplace-auth') {
     return <CreatorMarketplaceAuthPage />;
+  }
+
+  if (path === '/creator-subscription') {
+    return <CreatorSubscriptionPage />;
   }
 
   if (path === '/creator-dashboard') {

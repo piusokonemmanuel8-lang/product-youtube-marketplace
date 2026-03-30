@@ -21,6 +21,7 @@ function normalizeArrayResponse(data) {
   if (Array.isArray(data?.tags)) return data.tags;
   if (Array.isArray(data?.plans)) return data.plans;
   if (Array.isArray(data?.videos)) return data.videos;
+  if (Array.isArray(data?.external_posting_plans)) return data.external_posting_plans;
   return [];
 }
 
@@ -28,12 +29,24 @@ function normalizeObjectResponse(data) {
   return data?.data || data?.subscription || data?.current || data || null;
 }
 
+function normalizeBuyLink(url = '') {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return '';
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `https://${trimmed}`;
+}
+
 function isExternalUrl(url = '') {
-  if (!url) return false;
+  const normalized = normalizeBuyLink(url);
+  if (!normalized) return false;
 
   try {
-    const parsed = new URL(url);
-    return !parsed.hostname.includes('supgad.com');
+    const parsed = new URL(normalized);
+    return !parsed.hostname.toLowerCase().includes('supgad.com');
   } catch {
     return false;
   }
@@ -46,6 +59,28 @@ function getToken() {
     localStorage.getItem('authToken') ||
     ''
   );
+}
+
+function isExternalPlanError(message = '') {
+  const lower = String(message || '').toLowerCase();
+
+  return (
+    lower.includes('external marketplace auth') ||
+    lower.includes('external buy-now links require') ||
+    lower.includes('subscribe to a plan to post external product links') ||
+    lower.includes('plan limit') ||
+    lower.includes('upgrade your subscription')
+  );
+}
+
+function getExternalLinkErrorText(message = '') {
+  const lower = String(message || '').toLowerCase();
+
+  if (lower.includes('plan limit') || lower.includes('upgrade your subscription')) {
+    return 'Upgrade to post with external link';
+  }
+
+  return 'Upgrade to post with external link';
 }
 
 function UploadVideoPage() {
@@ -68,6 +103,7 @@ function UploadVideoPage() {
   const [plansLoading, setPlansLoading] = useState(false);
   const [subscribingPlanId, setSubscribingPlanId] = useState('');
   const [editingVideo, setEditingVideo] = useState(null);
+  const [showUpgradeButton, setShowUpgradeButton] = useState(false);
 
   const [formData, setFormData] = useState({
     category_id: '',
@@ -91,6 +127,7 @@ function UploadVideoPage() {
       setLoading(true);
       setErrorMessage('');
       setPageMessage('');
+      setShowUpgradeButton(false);
 
       try {
         const [categoriesResponse, tagsResponse, channelResponse] = await Promise.all([
@@ -314,18 +351,27 @@ function UploadVideoPage() {
     return key;
   }
 
+  function handleGoToSubscription() {
+    window.location.href = '/creator-subscription';
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
     setSubmitting(true);
     setPageMessage('');
     setErrorMessage('');
     setShowExternalPlans(false);
+    setShowUpgradeButton(false);
     setUploadStage(isEditMode ? 'Saving changes...' : 'Preparing upload...');
     setUploadPercent(0);
 
     try {
       if (!channelId) {
         throw new Error('No creator channel found. Create your channel first.');
+      }
+
+      if (!formData.buy_link.trim()) {
+        throw new Error('Buy link is required.');
       }
 
       if (!isEditMode && !formData.video_file) {
@@ -352,7 +398,7 @@ function UploadVideoPage() {
       setUploadStage(isEditMode ? 'Saving video changes...' : 'Saving video metadata...');
       setUploadPercent((prev) => Math.max(prev, 93));
 
-      const buyNowUrl = formData.buy_link.trim();
+      const buyNowUrl = normalizeBuyLink(formData.buy_link.trim());
       const externalLink = isExternalUrl(buyNowUrl);
 
       const videoPayload = {
@@ -364,9 +410,9 @@ function UploadVideoPage() {
         duration_seconds: Number(formData.duration_seconds || 0),
         visibility: formData.visibility,
         comments_enabled: formData.comments_enabled ? 1 : 0,
-        buy_now_enabled: buyNowUrl ? 1 : 0,
+        buy_now_enabled: 1,
         is_monetized: formData.is_monetized ? 1 : 0,
-        buy_now_url: buyNowUrl || null,
+        buy_now_url: buyNowUrl,
       };
 
       if (videoKey) {
@@ -444,20 +490,28 @@ function UploadVideoPage() {
         setShowExternalPlans(false);
       }
     } catch (error) {
+      const backendStatus = error?.response?.status;
       const backendMessage =
         error?.response?.data?.message ||
         error?.message ||
         (isEditMode ? 'Failed to update video' : 'Failed to create video');
 
-      const buyNowUrl = formData.buy_link.trim();
+      const buyNowUrl = normalizeBuyLink(formData.buy_link.trim());
       const externalLink = isExternalUrl(buyNowUrl);
+      const showUpgrade = externalLink && isExternalPlanError(backendMessage);
 
-      if (!isEditMode && error?.response?.status === 403 && externalLink) {
-        setErrorMessage(backendMessage);
-        setUploadStage('External posting plan required');
+      if (!isEditMode && (backendStatus === 402 || backendStatus === 403) && externalLink) {
+        setErrorMessage(getExternalLinkErrorText(backendMessage));
+        setShowUpgradeButton(true);
+        setUploadStage('Subscription required');
         await loadExternalPlanData();
+      } else if (showUpgrade) {
+        setErrorMessage(getExternalLinkErrorText(backendMessage));
+        setShowUpgradeButton(true);
+        setUploadStage(isEditMode ? 'Update failed' : 'Upload failed');
       } else {
         setErrorMessage(backendMessage);
+        setShowUpgradeButton(false);
         setUploadStage(isEditMode ? 'Update failed' : 'Upload failed');
       }
     } finally {
@@ -479,7 +533,29 @@ function UploadVideoPage() {
     <div className="videogad-upload-page">
       <div className="videogad-upload-card">
         {errorMessage ? (
-          <div className="upload-inline-message error">{errorMessage}</div>
+          <div
+            className="upload-inline-message error"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span>{errorMessage}</span>
+
+            {showUpgradeButton ? (
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={handleGoToSubscription}
+                style={{ minWidth: '190px' }}
+              >
+                Upgrade Subscription
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
         {pageMessage ? (
@@ -601,6 +677,7 @@ function UploadVideoPage() {
                 value={formData.buy_link}
                 onChange={handleChange}
                 placeholder="https://your-store-link.com/product"
+                required
               />
             </div>
 
