@@ -1,14 +1,50 @@
 const crypto = require('crypto');
 const pool = require('../config/db');
+const { getOrCreateWallet } = require('./walletController');
 
 function normalizeSkipAfterSeconds(value) {
   const parsed = Number(value);
 
   if (!Number.isFinite(parsed) || parsed < 3) {
-    return 10;
+    return 3;
   }
 
   return Math.floor(parsed);
+}
+
+function roundMoney(value) {
+  return Number((Number(value || 0)).toFixed(4));
+}
+
+function calculateCostPerView(skipAfterSeconds) {
+  return roundMoney((Number(skipAfterSeconds) / 3) * 0.01);
+}
+
+function calculateCostPerClick() {
+  return 0.02;
+}
+
+function normalizeDateTime(value, endOfDay = false) {
+  if (!value) return null;
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return endOfDay ? `${raw} 23:59:59` : `${raw} 00:00:00`;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  const hours = String(parsed.getHours()).padStart(2, '0');
+  const minutes = String(parsed.getMinutes()).padStart(2, '0');
+  const seconds = String(parsed.getSeconds()).padStart(2, '0');
+
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
 async function createAdCampaign(req, res) {
@@ -19,8 +55,6 @@ async function createAdCampaign(req, res) {
       title,
       destination_url,
       budget,
-      cost_per_view,
-      cost_per_click,
       max_impressions,
       max_clicks,
       skip_after_seconds,
@@ -42,8 +76,27 @@ async function createAdCampaign(req, res) {
       });
     }
 
+    const wallet = await getOrCreateWallet(creatorUserId);
+
+    if (Number(wallet.balance || 0) <= 0) {
+      return res.status(400).json({
+        message: 'Please fund your account before submitting ads',
+      });
+    }
+
     const campaignUuid = crypto.randomUUID();
     const finalSkipAfterSeconds = normalizeSkipAfterSeconds(skip_after_seconds);
+    const finalCostPerView = calculateCostPerView(finalSkipAfterSeconds);
+    const finalCostPerClick = calculateCostPerClick();
+
+    if (Number(wallet.balance || 0) < finalCostPerView) {
+      return res.status(400).json({
+        message: 'Please fund your account before submitting ads',
+      });
+    }
+
+    const normalizedStartsAt = normalizeDateTime(starts_at, false);
+    const normalizedEndsAt = normalizeDateTime(ends_at, true);
 
     const [result] = await pool.query(
       `INSERT INTO ad_campaigns
@@ -72,15 +125,15 @@ async function createAdCampaign(req, res) {
         advertiser_email || null,
         title.trim(),
         destination_url.trim(),
-        budget || 0,
-        cost_per_view || 0,
-        cost_per_click || 0,
+        roundMoney(budget || 0),
+        finalCostPerView,
+        finalCostPerClick,
         max_impressions || 0,
         max_clicks || 0,
         finalSkipAfterSeconds,
         'draft',
-        starts_at || null,
-        ends_at || null,
+        normalizedStartsAt,
+        normalizedEndsAt,
       ]
     );
 
@@ -92,6 +145,10 @@ async function createAdCampaign(req, res) {
     return res.status(201).json({
       message: 'Ad campaign created successfully',
       campaign: campaigns[0],
+      pricing: {
+        cost_per_view: finalCostPerView,
+        cost_per_click: finalCostPerClick,
+      },
     });
   } catch (error) {
     return res.status(500).json({

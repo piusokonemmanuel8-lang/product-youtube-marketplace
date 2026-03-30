@@ -275,6 +275,7 @@ function CreatorDashboardPage() {
           <a href="/creator-analytics">Analytics</a>
           <a href="/creator-ads">Ads</a>
           <a href="/creator-ads-analytics">Ads Analytics</a>
+          <a href="/creator-wallet">Wallet</a>
           <a href="/creator-earnings">Earnings</a>
           <a href="/creator-payout">Payout</a>
           <a href="/account-settings">Settings</a>
@@ -328,6 +329,7 @@ function CreatorDashboardPage() {
               <a href="/upload-video" className="primary-btn">Upload Video</a>
               <a href="/creator-ads" className="ghost-btn">Manage Ads</a>
               <a href="/creator-ads-analytics" className="ghost-btn">Ads Analytics</a>
+              <a href="/creator-wallet" className="ghost-btn">Wallet</a>
               <a href="/create-channel" className="ghost-btn">
                 {hasChannel ? 'Edit Channel' : 'Create Channel'}
               </a>
@@ -417,6 +419,11 @@ function CreatorDashboardPage() {
               <div className="quick-action-card">
                 <h4>Ads Analytics</h4>
                 <p>View real ad impressions, clicks, skips and campaign performance.</p>
+              </div>
+
+              <div className="quick-action-card">
+                <h4>Wallet</h4>
+                <p>Top up your ad wallet and track every expenditure in one place.</p>
               </div>
 
               <div className="quick-action-card">

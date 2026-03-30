@@ -57,6 +57,9 @@ function normalizeAdCampaign(campaign, index = 0) {
     max_clicks: Number(campaign?.max_clicks || 0),
     skip_after_seconds: Number(campaign?.skip_after_seconds || 0),
     status: campaign?.status || 'draft',
+    pause_reason: campaign?.pause_reason || '',
+    pause_notice: campaign?.pause_notice || '',
+    paused_at: campaign?.paused_at || '',
     starts_at: campaign?.starts_at || '',
     ends_at: campaign?.ends_at || '',
     created_at: campaign?.created_at || '',
@@ -112,6 +115,7 @@ function campaignMatchesFilter(campaign, filterValue) {
 
   const dbStatus = String(campaign?.status || '').toLowerCase();
   const runtimeStatus = getCampaignRuntimeStatus(campaign);
+  const pauseReason = String(campaign?.pause_reason || '').toLowerCase();
 
   if (filterValue === 'approved') {
     return dbStatus === 'active';
@@ -119,6 +123,10 @@ function campaignMatchesFilter(campaign, filterValue) {
 
   if (filterValue === 'still-running') {
     return runtimeStatus === 'running';
+  }
+
+  if (filterValue === 'wallet_exhausted') {
+    return pauseReason === 'wallet_exhausted';
   }
 
   return runtimeStatus === filterValue || dbStatus === filterValue;
@@ -399,6 +407,8 @@ function AdminDashboardPage() {
         String(campaign?.advertiser_email || '').toLowerCase().includes(term) ||
         String(campaign?.status || '').toLowerCase().includes(term) ||
         String(campaign?.destination_url || '').toLowerCase().includes(term) ||
+        String(campaign?.pause_notice || '').toLowerCase().includes(term) ||
+        String(campaign?.pause_reason || '').toLowerCase().includes(term) ||
         String(getCampaignRuntimeStatus(campaign)).toLowerCase().includes(term);
 
       const matchesStatus = campaignMatchesFilter(campaign, adsStatusFilter);
@@ -457,6 +467,10 @@ function AdminDashboardPage() {
       (campaign) => getCampaignRuntimeStatus(campaign) === 'ended'
     ).length;
 
+    const walletExhaustedCampaigns = adCampaigns.filter(
+      (campaign) => String(campaign?.pause_reason || '').toLowerCase() === 'wallet_exhausted'
+    ).length;
+
     return [
       { label: 'All Videos', value: videos.length },
       { label: 'Pending Video Reviews', value: pendingQueue },
@@ -470,6 +484,7 @@ function AdminDashboardPage() {
       { label: 'Pending Ad Campaigns', value: pendingAdCampaigns.length },
       { label: 'Running Ad Campaigns', value: runningCampaigns },
       { label: 'Paused Ad Campaigns', value: pausedCampaigns },
+      { label: 'Wallet Exhausted Ads', value: walletExhaustedCampaigns },
       { label: 'Ended Ad Campaigns', value: endedCampaigns },
       { label: 'Ad Videos', value: adVideos.length },
       { label: 'Pending Ad Videos', value: pendingAdVideos.length },
@@ -978,7 +993,8 @@ function AdminDashboardPage() {
 - Pause ad campaign
 - Delete ad campaign
 - Approve ad video
-- Campaign stats lookup by ID`}
+- Campaign stats lookup by ID
+- Wallet exhausted notice for paused ads`}
             </pre>
           </div>
         </div>
@@ -1591,6 +1607,7 @@ function AdminDashboardPage() {
             <option value="approved">Approved</option>
             <option value="running">Still Running</option>
             <option value="paused">Paused</option>
+            <option value="wallet_exhausted">Wallet Exhausted</option>
             <option value="ended">Ended</option>
             <option value="scheduled">Scheduled</option>
             <option value="rejected">Rejected</option>
@@ -1725,13 +1742,14 @@ Performance
                 <th>DB Status</th>
                 <th>Live Status</th>
                 <th>Dates</th>
+                <th>Notice</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredAdCampaigns.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="admin-empty">No ad campaigns found</td>
+                  <td colSpan="11" className="admin-empty">No ad campaigns found</td>
                 </tr>
               ) : (
                 filteredAdCampaigns.map((campaign) => (
@@ -1761,6 +1779,19 @@ Performance
                     <td>
                       <div className="admin-subtext">Start: {formatDate(campaign.starts_at)}</div>
                       <div className="admin-subtext">End: {formatDate(campaign.ends_at)}</div>
+                    </td>
+                    <td>
+                      {campaign.pause_notice ? (
+                        <div>
+                          <div className="admin-strong">{campaign.pause_notice}</div>
+                          <div className="admin-subtext">
+                            {campaign.pause_reason || 'paused'}
+                            {campaign.paused_at ? ` • ${formatDate(campaign.paused_at)}` : ''}
+                          </div>
+                        </div>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td>
                       <div className="admin-actions">

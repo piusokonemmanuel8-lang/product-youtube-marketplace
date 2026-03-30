@@ -76,7 +76,7 @@ function CreatorAdsPage() {
     video_id: '',
     ad_video_title: '',
     ad_video_description: '',
-    ad_duration_seconds: '15',
+    ad_duration_seconds: '60',
   });
 
   const [statsCampaignId, setStatsCampaignId] = useState('');
@@ -146,7 +146,7 @@ function CreatorAdsPage() {
         ...prev,
         video_id: String(usableVideos[0].id),
         ad_video_title: prev.ad_video_title || usableVideos[0].title,
-        ad_duration_seconds: '15',
+        ad_duration_seconds: '60',
       }));
     }
   }, [usableVideos, campaignForm.video_id, adVideoForm.video_id, adVideoForm.ad_video_title]);
@@ -171,7 +171,7 @@ function CreatorAdsPage() {
       ...prev,
       video_id: String(video.id),
       ad_video_title: prev.ad_video_title || video.title,
-      ad_duration_seconds: '15',
+      ad_duration_seconds: '60',
     }));
   }
 
@@ -218,7 +218,7 @@ function CreatorAdsPage() {
     try {
       const response = await creatorAdsService.createAdVideo({
         ...adVideoForm,
-        ad_duration_seconds: '15',
+        ad_duration_seconds: '60',
       });
 
       setAdVideoResponse(response);
@@ -650,12 +650,12 @@ function CreatorAdsPage() {
                 placeholder="Ad duration in seconds"
                 type="number"
                 min="1"
-                value="15"
+                value="60"
                 readOnly
               />
 
               <div className="videogad-panel" style={{ padding: 12, marginTop: 4 }}>
-                <strong>Note:</strong> Ad duration is fixed to 15 seconds for delivery stability.
+                <strong>Note:</strong> Ad duration is fixed to 60 seconds.
               </div>
 
               <div className="admin-actions">
