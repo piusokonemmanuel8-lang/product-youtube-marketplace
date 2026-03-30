@@ -18,6 +18,98 @@ async function pauseCampaignForWallet(campaignId) {
   );
 }
 
+async function pauseCampaignForDailyCap(campaignId) {
+  await pool.query(
+    `UPDATE ad_campaigns
+     SET status = 'paused',
+         pause_reason = 'daily_cap_reached',
+         pause_notice = 'Ad paused because daily budget cap was reached',
+         paused_at = NOW()
+     WHERE id = ?`,
+    [campaignId]
+  );
+}
+
+function isSameUtcDay(dateA, dateB) {
+  const a = new Date(dateA);
+  const b = new Date(dateB);
+
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
+}
+
+async function maybeResumeCampaignForNewDay(campaign) {
+  const pauseReason = String(campaign?.pause_reason || '').toLowerCase();
+
+  if (campaign?.status !== 'paused') {
+    return campaign;
+  }
+
+  if (pauseReason !== 'daily_cap_reached') {
+    return campaign;
+  }
+
+  if (!campaign?.paused_at) {
+    return campaign;
+  }
+
+  const now = new Date();
+  const pausedAt = new Date(campaign.paused_at);
+
+  if (Number.isNaN(pausedAt.getTime())) {
+    return campaign;
+  }
+
+  if (isSameUtcDay(pausedAt, now)) {
+    return campaign;
+  }
+
+  await pool.query(
+    `UPDATE ad_campaigns
+     SET status = 'active',
+         pause_reason = NULL,
+         pause_notice = NULL,
+         paused_at = NULL
+     WHERE id = ?`,
+    [campaign.id]
+  );
+
+  const [updatedRows] = await pool.query(
+    `SELECT id, creator_user_id, title, status, cost_per_view, budget, pause_reason, pause_notice, paused_at
+     FROM ad_campaigns
+     WHERE id = ?
+     LIMIT 1`,
+    [campaign.id]
+  );
+
+  return updatedRows[0] || campaign;
+}
+
+async function getTodayCampaignSpend(campaignId) {
+  const [impressionRows] = await pool.query(
+    `SELECT COALESCE(SUM(ac.cost_per_view), 0) AS total
+     FROM ad_impressions ai
+     INNER JOIN ad_campaigns ac ON ac.id = ai.campaign_id
+     WHERE ai.campaign_id = ?
+       AND DATE(ai.created_at) = UTC_DATE()`,
+    [campaignId]
+  );
+
+  const [clickRows] = await pool.query(
+    `SELECT COALESCE(SUM(ac.cost_per_click), 0) AS total
+     FROM ad_clicks adc
+     INNER JOIN ad_campaigns ac ON ac.id = adc.campaign_id
+     WHERE adc.campaign_id = ?
+       AND DATE(adc.created_at) = UTC_DATE()`,
+    [campaignId]
+  );
+
+  return roundMoney(Number(impressionRows[0]?.total || 0) + Number(clickRows[0]?.total || 0));
+}
+
 async function trackAdImpression(req, res) {
   try {
     const {
@@ -36,7 +128,7 @@ async function trackAdImpression(req, res) {
     }
 
     const [campaignRows] = await pool.query(
-      `SELECT id, creator_user_id, title, status, cost_per_view
+      `SELECT id, creator_user_id, title, status, cost_per_view, budget, pause_reason, pause_notice, paused_at
        FROM ad_campaigns
        WHERE id = ?
        LIMIT 1`,
@@ -49,11 +141,26 @@ async function trackAdImpression(req, res) {
       });
     }
 
-    const campaign = campaignRows[0];
+    let campaign = campaignRows[0];
+    campaign = await maybeResumeCampaignForNewDay(campaign);
 
     if (campaign.status !== 'active') {
       return res.status(400).json({
         message: 'Ad campaign is not active',
+      });
+    }
+
+    const debitAmount = roundMoney(campaign.cost_per_view || 0);
+    const dailySpendToday = await getTodayCampaignSpend(campaign.id);
+    const dailyBudgetCap = roundMoney(campaign.budget || 0);
+
+    if (dailyBudgetCap > 0 && roundMoney(dailySpendToday + debitAmount) > dailyBudgetCap) {
+      await pauseCampaignForDailyCap(campaign.id);
+
+      return res.status(200).json({
+        message: 'Ad campaign paused because daily budget cap was reached',
+        campaign_paused: true,
+        pause_reason: 'daily_cap_reached',
       });
     }
 
@@ -84,8 +191,6 @@ async function trackAdImpression(req, res) {
         watched_seconds || 0,
       ]
     );
-
-    const debitAmount = roundMoney(campaign.cost_per_view || 0);
 
     const debitResult = await debitWalletForAdSpend({
       creatorUserId: campaign.creator_user_id,
@@ -127,6 +232,8 @@ async function trackAdImpression(req, res) {
       charged_amount: debitAmount,
       wallet_balance: debitResult.wallet?.balance || 0,
       campaign_paused: Number(debitResult.wallet?.balance || 0) <= 0,
+      daily_spend_today: roundMoney(dailySpendToday + debitAmount),
+      daily_budget_cap: dailyBudgetCap,
       impression: impressions[0] || {
         id: result.insertId,
         campaign_id,
