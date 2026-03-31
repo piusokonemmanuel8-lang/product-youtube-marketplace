@@ -117,6 +117,9 @@ function normalizeArrayPayload(payload) {
   if (Array.isArray(payload?.ads)) return payload.ads;
   if (Array.isArray(payload?.conversations)) return payload.conversations;
   if (Array.isArray(payload?.messages)) return payload.messages;
+  if (Array.isArray(payload?.applications)) return payload.applications;
+  if (Array.isArray(payload?.payout_requests)) return payload.payout_requests;
+  if (Array.isArray(payload?.payouts)) return payload.payouts;
   return [];
 }
 
@@ -294,6 +297,80 @@ function normalizeSupportConversationDetail(payload) {
   };
 }
 
+function normalizeMonetizationApplication(application, index = 0) {
+  return {
+    id: application?.id || `monetization-${index}`,
+    creator_id: application?.creator_id || '',
+    user_id: application?.user_id || '',
+    status: application?.status || 'pending',
+    subscriber_count: Number(application?.subscriber_count || 0),
+    total_video_views: Number(application?.total_video_views || 0),
+    total_watch_time_seconds: Number(application?.total_watch_time_seconds || 0),
+    total_watch_hours: Number(application?.total_watch_hours || 0),
+    has_active_external_subscription:
+      application?.has_active_external_subscription === 1 ||
+      application?.has_active_external_subscription === true,
+    applied_message: application?.applied_message || '',
+    admin_note: application?.admin_note || '',
+    public_name: application?.public_name || '',
+    full_name: application?.full_name || '',
+    email: application?.email || '',
+    approved_by: application?.approved_by || null,
+    approved_at: application?.approved_at || '',
+    rejected_by: application?.rejected_by || null,
+    rejected_at: application?.rejected_at || '',
+    created_at: application?.created_at || '',
+    updated_at: application?.updated_at || '',
+    raw: application,
+  };
+}
+
+function normalizeRevenueSharePolicy(payload = {}) {
+  const policy = payload?.revenue_share_policy || payload?.policy || payload || {};
+
+  return {
+    creator_share_percent: Number(policy?.creator_share_percent || 55),
+    platform_share_percent: Number(policy?.platform_share_percent || 45),
+    raw: policy,
+  };
+}
+
+function normalizeRevenueSplitExample(payload = {}) {
+  const source = payload?.revenue_split_example_for_100 || payload?.revenue_allocation || payload || {};
+
+  return {
+    gross_revenue: Number(source?.gross_revenue || 100),
+    creator_share_amount: Number(source?.creator_share_amount || 55),
+    platform_share_amount: Number(source?.platform_share_amount || 45),
+    creator_share_percent: Number(source?.creator_share_percent || 55),
+    platform_share_percent: Number(source?.platform_share_percent || 45),
+    raw: source,
+  };
+}
+
+function normalizePayoutRequest(item, index = 0) {
+  return {
+    id: item?.id || `payout-${index}`,
+    creator_id: item?.creator_id || '',
+    payout_method_id: item?.payout_method_id || '',
+    amount: Number(item?.amount || 0),
+    currency_code: item?.currency_code || 'USD',
+    status: item?.status || 'pending',
+    requested_at: item?.requested_at || item?.created_at || '',
+    created_at: item?.created_at || item?.requested_at || '',
+    public_name: item?.public_name || '',
+    full_name: item?.full_name || '',
+    email: item?.email || '',
+    available_balance: Number(item?.available_balance || 0),
+    method_type: item?.method_type || '',
+    account_name: item?.account_name || '',
+    account_number: item?.account_number || '',
+    bank_name: item?.bank_name || '',
+    wallet_address: item?.wallet_address || '',
+    raw: item,
+  };
+}
+
 const adminService = {
   async login(email, password) {
     const payload = await request('/api/auth/login', {
@@ -347,17 +424,9 @@ const adminService = {
   async getAdminVideos(params = {}) {
     const searchParams = new URLSearchParams();
 
-    if (params.status) {
-      searchParams.set('status', params.status);
-    }
-
-    if (params.moderation_status) {
-      searchParams.set('moderation_status', params.moderation_status);
-    }
-
-    if (params.limit) {
-      searchParams.set('limit', String(params.limit));
-    }
+    if (params.status) searchParams.set('status', params.status);
+    if (params.moderation_status) searchParams.set('moderation_status', params.moderation_status);
+    if (params.limit) searchParams.set('limit', String(params.limit));
 
     const query = searchParams.toString();
     const path = query ? `/api/videos/admin/all?${query}` : '/api/videos/admin/all';
@@ -405,13 +474,8 @@ const adminService = {
   async getAdminChannels(params = {}) {
     const searchParams = new URLSearchParams();
 
-    if (params.status) {
-      searchParams.set('status', params.status);
-    }
-
-    if (params.limit) {
-      searchParams.set('limit', String(params.limit));
-    }
+    if (params.status) searchParams.set('status', params.status);
+    if (params.limit) searchParams.set('limit', String(params.limit));
 
     const query = searchParams.toString();
     const path = query ? `/api/channels/admin/all?${query}` : '/api/channels/admin/all';
@@ -572,13 +636,8 @@ const adminService = {
   async getSupportConversations(params = {}) {
     const searchParams = new URLSearchParams();
 
-    if (params.status) {
-      searchParams.set('status', params.status);
-    }
-
-    if (params.search) {
-      searchParams.set('search', params.search);
-    }
+    if (params.status) searchParams.set('status', params.status);
+    if (params.search) searchParams.set('search', params.search);
 
     const query = searchParams.toString();
     const path = query
@@ -612,6 +671,86 @@ const adminService = {
     return await request(`/api/support/admin/conversations/${conversationId}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status }),
+    });
+  },
+
+  async getMonetizationApplications(params = {}) {
+    const searchParams = new URLSearchParams();
+
+    if (params.status) searchParams.set('status', params.status);
+
+    const query = searchParams.toString();
+    const path = query
+      ? `/api/admin/monetization/applications?${query}`
+      : '/api/admin/monetization/applications';
+
+    const payload = await safeRequest(path, { method: 'GET' }, []);
+    return normalizeArrayPayload(payload).map((application, index) =>
+      normalizeMonetizationApplication(application, index)
+    );
+  },
+
+  async getMonetizationApplicationById(applicationId) {
+    const payload = await request(`/api/admin/monetization/applications/${applicationId}`, {
+      method: 'GET',
+    });
+
+    return normalizeMonetizationApplication(
+      payload?.application || payload?.data?.application || payload,
+      0
+    );
+  },
+
+  async updateMonetizationApplicationStatus(applicationId, payload) {
+    return await request(`/api/admin/monetization/applications/${applicationId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(payload || {}),
+    });
+  },
+
+  async getRevenueSharePolicy() {
+    const payload = await request('/api/admin/monetization/applications', {
+      method: 'GET',
+    });
+
+    return normalizeRevenueSharePolicy(payload);
+  },
+
+  async getRevenueSplitExampleFor100() {
+    const payload = await request('/api/admin/monetization/applications', {
+      method: 'GET',
+    });
+
+    return normalizeRevenueSplitExample(payload);
+  },
+
+  async getAdminPayoutRequests(params = {}) {
+    const searchParams = new URLSearchParams();
+
+    if (params.status) searchParams.set('status', params.status);
+
+    const query = searchParams.toString();
+    const path = query
+      ? `/api/admin/payout-requests?${query}`
+      : '/api/admin/payout-requests';
+
+    const payload = await safeRequest(path, { method: 'GET' }, []);
+    return normalizeArrayPayload(payload).map((item, index) =>
+      normalizePayoutRequest(item, index)
+    );
+  },
+
+  async updateAdminPayoutRequestStatus(requestId, payload) {
+    return await request(`/api/admin/payout-requests/${requestId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(payload || {}),
+    });
+  },
+
+  async markAdminPayoutRequestPaid(requestId, payload = {}) {
+    return await request(`/api/admin/payout-requests/${requestId}/pay`, {
+      method: 'PUT',
+      body: JSON.stringify(payload || {}),
     });
   },
 };

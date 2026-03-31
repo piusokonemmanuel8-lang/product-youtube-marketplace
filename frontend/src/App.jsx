@@ -20,6 +20,7 @@ import CreatorPayoutPage from './pages/CreatorPayoutPage';
 import CreatorMarketplaceAuthPage from './pages/CreatorMarketplaceAuthPage';
 import CreatorSubscriptionPage from './pages/CreatorSubscriptionPage';
 import CreatorSupportPage from './pages/CreatorSupportPage';
+import CreatorMonetizationPage from './pages/CreatorMonetizationPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 
@@ -77,6 +78,10 @@ function App() {
 
   if (path === '/creator-support') {
     return <CreatorSupportPage />;
+  }
+
+  if (path === '/creator-monetization') {
+    return <CreatorMonetizationPage />;
   }
 
   if (path === '/creator-dashboard') {

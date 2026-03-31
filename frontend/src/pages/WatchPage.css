@@ -901,6 +901,33 @@
   border-radius: 999px;
 }
 
+/* =========================
+   SPONSORED AD LABEL FIX
+========================= */
+
+.watch-short-ad-top-left,
+.watch-short-ad-top-left *,
+.watch-short-ad-top-left .watch-short-ad-pill,
+.watch-short-ad-top-left .watch-short-ad-pill *,
+.watch-short-ad-pill,
+.watch-short-ad-pill *,
+.sponsored-ad-label,
+.watch-sponsored-ad-label,
+.ad-sponsored-label,
+.ad-badge-sponsored,
+.video-ad-sponsored,
+.watch-ad-sponsored,
+.sponsored-label,
+.sponsored-label * {
+  color: #ffffff !important;
+}
+
+.watch-short-ad-top-left .watch-short-ad-pill,
+.watch-short-ad-pill {
+  background: rgba(0, 0, 0, 0.42);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
 @media (max-width: 1100px) {
   .watch-layout {
     grid-template-columns: 1fr;

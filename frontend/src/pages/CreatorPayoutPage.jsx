@@ -18,55 +18,32 @@ function normalizeArrayResponse(data) {
   return [];
 }
 
-function getDemoMethods() {
-  return [
-    {
-      id: 1,
-      method_name: 'Bank Transfer',
-      account_name: 'Demo Creator',
-      account_number: '0123456789',
-      bank_name: 'Access Bank',
-      status: 'Active',
-    },
-  ];
+function parseAmount(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/[^\d.-]/g, '');
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return Number(value || 0) || 0;
 }
 
-function getDemoRequests() {
-  return [
-    {
-      id: 1,
-      amount: '$80,000',
-      status: 'Pending',
-      created_at: '2026-03-22',
-      method: 'Bank Transfer',
-    },
-    {
-      id: 2,
-      amount: '$35,000',
-      status: 'Paid',
-      created_at: '2026-03-03',
-      method: 'Crypto Wallet',
-    },
-  ];
+function formatMoney(value) {
+  return `$${Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
-function getDemoTransactions() {
-  return [
-    {
-      id: 1,
-      amount: '$80,000',
-      status: 'Completed',
-      created_at: '2026-03-20',
-      note: 'Payout settled',
-    },
-    {
-      id: 2,
-      amount: '$50,000',
-      status: 'Completed',
-      created_at: '2026-03-10',
-      note: 'Bank payout',
-    },
-  ];
+function formatDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 function CreatorPayoutPage() {
@@ -76,7 +53,6 @@ function CreatorPayoutPage() {
   const [loading, setLoading] = useState(true);
   const [pageMessage, setPageMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [isDemoMode, setIsDemoMode] = useState(false);
 
   const [methodForm, setMethodForm] = useState({
     method_name: 'Bank Transfer',
@@ -110,33 +86,30 @@ function CreatorPayoutPage() {
       const requestsData = normalizeArrayResponse(requestsResponse);
       const transactionsData = normalizeArrayResponse(transactionsResponse);
 
-      if (!methodsData.length && !requestsData.length && !transactionsData.length) {
-        throw new Error('No payout data available yet');
-      }
-
       setMethods(methodsData);
       setRequests(requestsData);
       setTransactions(transactionsData);
-      setIsDemoMode(false);
 
       if (methodsData.length) {
         setRequestForm((prev) => ({
           ...prev,
           payout_method_id: String(methodsData[0].id),
         }));
+      } else {
+        setRequestForm((prev) => ({
+          ...prev,
+          payout_method_id: '',
+        }));
+      }
+
+      if (!methodsData.length && !requestsData.length && !transactionsData.length) {
+        setPageMessage('No payout data available yet.');
       }
     } catch (error) {
-      const demoMethods = getDemoMethods();
-      setMethods(demoMethods);
-      setRequests(getDemoRequests());
-      setTransactions(getDemoTransactions());
-      setIsDemoMode(true);
-      setPageMessage('Demo mode is showing because payout data is not available yet.');
-      setErrorMessage('');
-      setRequestForm((prev) => ({
-        ...prev,
-        payout_method_id: String(demoMethods[0].id),
-      }));
+      setMethods([]);
+      setRequests([]);
+      setTransactions([]);
+      setErrorMessage(error.message || 'Failed to load payout data.');
     } finally {
       setLoading(false);
     }
@@ -177,25 +150,6 @@ function CreatorPayoutPage() {
     setErrorMessage('');
     setPageMessage('');
 
-    if (isDemoMode) {
-      const demoMethod = {
-        id: Date.now(),
-        ...methodForm,
-        status: 'Active',
-      };
-      setMethods((prev) => [demoMethod, ...prev]);
-      setPageMessage('Demo mode: payout method added locally.');
-      setMethodForm({
-        method_name: 'Bank Transfer',
-        account_name: '',
-        account_number: '',
-        bank_name: '',
-        wallet_address: '',
-      });
-      setSubmittingMethod(false);
-      return;
-    }
-
     try {
       await createCreatorPayoutMethod(methodForm);
       await loadPayoutPage();
@@ -220,31 +174,11 @@ function CreatorPayoutPage() {
     setErrorMessage('');
     setPageMessage('');
 
-    if (isDemoMode) {
-      const selectedMethod = methods.find(
-        (item) => String(item.id) === String(requestForm.payout_method_id)
-      );
-
-      const demoRequest = {
-        id: Date.now(),
-        amount: requestForm.amount,
-        status: 'Pending',
-        created_at: 'Just now',
-        method: selectedMethod?.method_name || 'Payout Method',
-      };
-
-      setRequests((prev) => [demoRequest, ...prev]);
-      setPageMessage('Demo mode: payout request added locally.');
-      setRequestForm((prev) => ({
-        ...prev,
-        amount: '',
-      }));
-      setSubmittingRequest(false);
-      return;
-    }
-
     try {
-      await createCreatorPayoutRequest(requestForm);
+      await createCreatorPayoutRequest({
+        amount: requestForm.amount,
+        payout_method_id: requestForm.payout_method_id,
+      });
       await loadPayoutPage();
       setPageMessage('Payout request submitted successfully.');
       setRequestForm((prev) => ({
@@ -409,6 +343,7 @@ function CreatorPayoutPage() {
                   value={requestForm.payout_method_id}
                   onChange={handleRequestChange}
                 >
+                  <option value="">Select payout method</option>
                   {methods.map((method) => (
                     <option key={method.id} value={method.id}>
                       {method.method_name || method.name || `Method ${method.id}`}
@@ -417,7 +352,11 @@ function CreatorPayoutPage() {
                 </select>
               </div>
 
-              <button type="submit" className="creator-payout-submit-btn" disabled={submittingRequest}>
+              <button
+                type="submit"
+                className="creator-payout-submit-btn"
+                disabled={submittingRequest || !methods.length}
+              >
                 {submittingRequest ? 'Submitting...' : 'Submit Request'}
               </button>
             </form>
@@ -459,12 +398,12 @@ function CreatorPayoutPage() {
               {requests.length ? (
                 requests.map((item, index) => (
                   <div className="creator-payout-table-row request-grid" key={item.id || index}>
-                    <span>{item.amount || item.total || '—'}</span>
-                    <span>{item.method || item.payout_method || '—'}</span>
+                    <span>{formatMoney(parseAmount(item.amount || item.total))}</span>
+                    <span>{item.method || item.payout_method || item.method_name || '—'}</span>
                     <span className={`payout-status ${String(item.status || 'pending').toLowerCase()}`}>
                       {item.status || 'Pending'}
                     </span>
-                    <span>{item.created_at || item.date || '—'}</span>
+                    <span>{formatDate(item.created_at || item.date)}</span>
                   </div>
                 ))
               ) : (
@@ -489,11 +428,11 @@ function CreatorPayoutPage() {
               {transactions.length ? (
                 transactions.map((item, index) => (
                   <div className="creator-payout-table-row transaction-grid" key={item.id || index}>
-                    <span>{item.amount || item.total || '—'}</span>
+                    <span>{formatMoney(parseAmount(item.amount || item.total))}</span>
                     <span className={`payout-status ${String(item.status || 'pending').toLowerCase()}`}>
                       {item.status || 'Pending'}
                     </span>
-                    <span>{item.created_at || item.date || '—'}</span>
+                    <span>{formatDate(item.created_at || item.date)}</span>
                     <span>{item.note || item.description || '—'}</span>
                   </div>
                 ))
@@ -503,12 +442,6 @@ function CreatorPayoutPage() {
             </div>
           </div>
         </section>
-
-        {isDemoMode ? (
-          <div className="creator-payout-note">
-            Some payout values are demo placeholders because backend payout records are not yet available.
-          </div>
-        ) : null}
       </div>
     </div>
   );

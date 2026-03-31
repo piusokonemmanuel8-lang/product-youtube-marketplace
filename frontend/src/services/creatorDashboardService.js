@@ -92,3 +92,22 @@ export async function markSupportConversationRead(conversationId) {
     method: 'PUT',
   });
 }
+
+export async function getCreatorMonetizationEligibility() {
+  return apiRequest('/creator/monetization/eligibility', {
+    method: 'GET',
+  });
+}
+
+export async function getMyMonetizationApplication() {
+  return apiRequest('/creator/monetization/application', {
+    method: 'GET',
+  });
+}
+
+export async function applyForMonetization(payload) {
+  return apiRequest('/creator/monetization/apply', {
+    method: 'POST',
+    body: payload,
+  });
+}

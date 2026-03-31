@@ -12,6 +12,8 @@ const TABS = [
   { key: 'plans', label: 'External Plans' },
   { key: 'ads', label: 'Ads Control' },
   { key: 'support', label: 'Support Chat' },
+  { key: 'monetization', label: 'Monetization' },
+  { key: 'payouts', label: 'Payouts' },
 ];
 
 function formatDate(value) {
@@ -26,7 +28,17 @@ function formatCount(value) {
 }
 
 function formatMoney(value) {
-  return Number(value || 0).toLocaleString();
+  return Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+}
+
+function formatHours(value) {
+  return Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
 }
 
 function getCategoryName(category) {
@@ -96,17 +108,9 @@ function getCampaignRuntimeStatus(campaign) {
   const startsAt = campaign?.starts_at ? new Date(campaign.starts_at).getTime() : null;
   const endsAt = campaign?.ends_at ? new Date(campaign.ends_at).getTime() : null;
 
-  if (endsAt && !Number.isNaN(endsAt) && endsAt < now) {
-    return 'ended';
-  }
-
-  if (startsAt && !Number.isNaN(startsAt) && startsAt > now) {
-    return 'scheduled';
-  }
-
-  if (baseStatus === 'active') {
-    return 'running';
-  }
+  if (endsAt && !Number.isNaN(endsAt) && endsAt < now) return 'ended';
+  if (startsAt && !Number.isNaN(startsAt) && startsAt > now) return 'scheduled';
+  if (baseStatus === 'active') return 'running';
 
   return baseStatus || 'unknown';
 }
@@ -118,17 +122,9 @@ function campaignMatchesFilter(campaign, filterValue) {
   const runtimeStatus = getCampaignRuntimeStatus(campaign);
   const pauseReason = String(campaign?.pause_reason || '').toLowerCase();
 
-  if (filterValue === 'approved') {
-    return dbStatus === 'active';
-  }
-
-  if (filterValue === 'still-running') {
-    return runtimeStatus === 'running';
-  }
-
-  if (filterValue === 'wallet_exhausted') {
-    return pauseReason === 'wallet_exhausted';
-  }
+  if (filterValue === 'approved') return dbStatus === 'active';
+  if (filterValue === 'still-running') return runtimeStatus === 'running';
+  if (filterValue === 'wallet_exhausted') return pauseReason === 'wallet_exhausted';
 
   return runtimeStatus === filterValue || dbStatus === filterValue;
 }
@@ -138,6 +134,30 @@ function normalizeConversationList(data) {
   if (Array.isArray(data?.conversations)) return data.conversations;
   if (Array.isArray(data?.data)) return data.data;
   return [];
+}
+
+function getSplitFromPolicy(policy) {
+  return {
+    creator_share_percent: Number(policy?.creator_share_percent || 55),
+    platform_share_percent: Number(policy?.platform_share_percent || 45),
+  };
+}
+
+function getReservedFromCampaign(campaign, policy) {
+  const split = getSplitFromPolicy(policy);
+  const totalRevenue =
+    Number(campaign?.budget || 0) > 0
+      ? Number(campaign.budget || 0)
+      : Number(campaign?.cost_per_view || 0) + Number(campaign?.cost_per_click || 0);
+
+  const creatorReserved = (totalRevenue * split.creator_share_percent) / 100;
+  const platformKept = (totalRevenue * split.platform_share_percent) / 100;
+
+  return {
+    gross: totalRevenue,
+    creator_reserved: creatorReserved,
+    platform_kept: platformKept,
+  };
 }
 
 function AdminDashboardPage() {
@@ -174,6 +194,33 @@ function AdminDashboardPage() {
   const [supportStatusFilter, setSupportStatusFilter] = useState('all');
   const [supportStatusUpdating, setSupportStatusUpdating] = useState(false);
   const [supportSending, setSupportSending] = useState(false);
+
+  const [monetizationApplications, setMonetizationApplications] = useState([]);
+  const [monetizationLoading, setMonetizationLoading] = useState(false);
+  const [monetizationStatusFilter, setMonetizationStatusFilter] = useState('all');
+  const [selectedMonetizationApplicationId, setSelectedMonetizationApplicationId] = useState(null);
+  const [selectedMonetizationApplication, setSelectedMonetizationApplication] = useState(null);
+  const [monetizationActionLoading, setMonetizationActionLoading] = useState(false);
+
+  const [payoutRequests, setPayoutRequests] = useState([]);
+  const [payoutLoading, setPayoutLoading] = useState(false);
+  const [payoutStatusFilter, setPayoutStatusFilter] = useState('all');
+  const [selectedPayoutRequestId, setSelectedPayoutRequestId] = useState(null);
+  const [selectedPayoutRequest, setSelectedPayoutRequest] = useState(null);
+  const [payoutActionLoading, setPayoutActionLoading] = useState(false);
+
+  const [revenueSharePolicy, setRevenueSharePolicy] = useState({
+    creator_share_percent: 55,
+    platform_share_percent: 45,
+  });
+
+  const [revenueSplitExample, setRevenueSplitExample] = useState({
+    gross_revenue: 100,
+    creator_share_amount: 55,
+    platform_share_amount: 45,
+    creator_share_percent: 55,
+    platform_share_percent: 45,
+  });
 
   const [categoryForm, setCategoryForm] = useState({
     name: '',
@@ -251,6 +298,9 @@ function AdminDashboardPage() {
         pendingAdCampaignsData,
         adVideosData,
         pendingAdVideosData,
+        revenuePolicyData,
+        revenueExampleData,
+        payoutRequestsData,
       ] = await Promise.all([
         adminService.getMe(),
         adminService.getVideos ? adminService.getVideos() : Promise.resolve([]),
@@ -264,6 +314,9 @@ function AdminDashboardPage() {
         adminService.getPendingAdCampaigns ? adminService.getPendingAdCampaigns() : Promise.resolve([]),
         adminService.getAdVideos ? adminService.getAdVideos() : Promise.resolve([]),
         adminService.getPendingAdVideos ? adminService.getPendingAdVideos() : Promise.resolve([]),
+        adminService.getRevenueSharePolicy ? adminService.getRevenueSharePolicy() : Promise.resolve(null),
+        adminService.getRevenueSplitExampleFor100 ? adminService.getRevenueSplitExampleFor100() : Promise.resolve(null),
+        adminService.getAdminPayoutRequests ? adminService.getAdminPayoutRequests() : Promise.resolve([]),
       ]);
 
       setMe(meData);
@@ -294,6 +347,24 @@ function AdminDashboardPage() {
           ? pendingAdVideosData.map((item, index) => normalizeAdVideo(item, index))
           : []
       );
+      setPayoutRequests(Array.isArray(payoutRequestsData) ? payoutRequestsData : []);
+
+      if (revenuePolicyData) {
+        setRevenueSharePolicy({
+          creator_share_percent: Number(revenuePolicyData.creator_share_percent || 55),
+          platform_share_percent: Number(revenuePolicyData.platform_share_percent || 45),
+        });
+      }
+
+      if (revenueExampleData) {
+        setRevenueSplitExample({
+          gross_revenue: Number(revenueExampleData.gross_revenue || 100),
+          creator_share_amount: Number(revenueExampleData.creator_share_amount || 55),
+          platform_share_amount: Number(revenueExampleData.platform_share_amount || 45),
+          creator_share_percent: Number(revenueExampleData.creator_share_percent || 55),
+          platform_share_percent: Number(revenueExampleData.platform_share_percent || 45),
+        });
+      }
     } catch (err) {
       setError(err.message || 'Failed to load admin dashboard');
     } finally {
@@ -304,6 +375,14 @@ function AdminDashboardPage() {
   useEffect(() => {
     if (activeTab === 'support') {
       loadSupportConversations();
+    }
+
+    if (activeTab === 'monetization') {
+      loadMonetizationApplications();
+    }
+
+    if (activeTab === 'payouts') {
+      loadPayoutRequests();
     }
   }, [activeTab]);
 
@@ -448,6 +527,169 @@ function AdminDashboardPage() {
       setError(err.message || 'Failed to update support status');
     } finally {
       setSupportStatusUpdating(false);
+    }
+  }
+
+  async function loadMonetizationApplications(preferredApplicationId = null) {
+    setMonetizationLoading(true);
+
+    try {
+      const params = {};
+      if (monetizationStatusFilter && monetizationStatusFilter !== 'all') {
+        params.status = monetizationStatusFilter;
+      }
+
+      const items = await adminService.getMonetizationApplications(params);
+      setMonetizationApplications(Array.isArray(items) ? items : []);
+
+      const nextId =
+        preferredApplicationId ||
+        selectedMonetizationApplicationId ||
+        items?.[0]?.id ||
+        null;
+
+      if (nextId) {
+        await loadMonetizationApplication(nextId);
+      } else {
+        setSelectedMonetizationApplicationId(null);
+        setSelectedMonetizationApplication(null);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to load monetization applications');
+    } finally {
+      setMonetizationLoading(false);
+    }
+  }
+
+  async function loadMonetizationApplication(applicationId) {
+    if (!applicationId) return;
+
+    try {
+      const application = await adminService.getMonetizationApplicationById(applicationId);
+      setSelectedMonetizationApplicationId(Number(applicationId));
+      setSelectedMonetizationApplication(application || null);
+    } catch (err) {
+      setError(err.message || 'Failed to load monetization application');
+    }
+  }
+
+  async function handleMonetizationDecision(status) {
+    if (!selectedMonetizationApplicationId) {
+      setError('Select a monetization application first');
+      return;
+    }
+
+    const adminNote =
+      window.prompt(
+        status === 'approved'
+          ? 'Optional approval note:'
+          : 'Reason for rejection (optional):',
+        ''
+      ) || '';
+
+    setMonetizationActionLoading(true);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      await adminService.updateMonetizationApplicationStatus(
+        selectedMonetizationApplicationId,
+        {
+          status,
+          admin_note: adminNote,
+        }
+      );
+
+      setSuccessMessage(
+        `Monetization application ${status === 'approved' ? 'approved' : 'rejected'}`
+      );
+
+      await loadMonetizationApplications(selectedMonetizationApplicationId);
+      await loadAll();
+    } catch (err) {
+      setError(err.message || 'Failed to update monetization application');
+    } finally {
+      setMonetizationActionLoading(false);
+    }
+  }
+
+  async function loadPayoutRequests(preferredRequestId = null) {
+    setPayoutLoading(true);
+
+    try {
+      const params = {};
+      if (payoutStatusFilter && payoutStatusFilter !== 'all') {
+        params.status = payoutStatusFilter;
+      }
+
+      const items = await adminService.getAdminPayoutRequests(params);
+      setPayoutRequests(Array.isArray(items) ? items : []);
+
+      const nextId =
+        preferredRequestId ||
+        selectedPayoutRequestId ||
+        items?.[0]?.id ||
+        null;
+
+      if (nextId) {
+        const selected =
+          items.find((item) => Number(item.id) === Number(nextId)) || null;
+        setSelectedPayoutRequestId(Number(nextId));
+        setSelectedPayoutRequest(selected);
+      } else {
+        setSelectedPayoutRequestId(null);
+        setSelectedPayoutRequest(null);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to load payout requests');
+    } finally {
+      setPayoutLoading(false);
+    }
+  }
+
+  async function handlePayoutStatus(status) {
+    if (!selectedPayoutRequestId) {
+      setError('Select a payout request first');
+      return;
+    }
+
+    setPayoutActionLoading(true);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      await adminService.updateAdminPayoutRequestStatus(selectedPayoutRequestId, { status });
+      setSuccessMessage(`Payout request ${status}`);
+      await loadPayoutRequests(selectedPayoutRequestId);
+      await loadAll();
+    } catch (err) {
+      setError(err.message || 'Failed to update payout request');
+    } finally {
+      setPayoutActionLoading(false);
+    }
+  }
+
+  async function handleMarkPayoutPaid() {
+    if (!selectedPayoutRequestId) {
+      setError('Select a payout request first');
+      return;
+    }
+
+    const note = window.prompt('Payment note (optional):', '') || '';
+
+    setPayoutActionLoading(true);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      await adminService.markAdminPayoutRequestPaid(selectedPayoutRequestId, { note });
+      setSuccessMessage('Payout request marked as paid');
+      await loadPayoutRequests(selectedPayoutRequestId);
+      await loadAll();
+    } catch (err) {
+      setError(err.message || 'Failed to mark payout as paid');
+    } finally {
+      setPayoutActionLoading(false);
     }
   }
 
@@ -630,6 +872,62 @@ function AdminDashboardPage() {
     });
   }, [supportConversations, searchTerm, supportStatusFilter]);
 
+  const filteredMonetizationApplications = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+
+    return monetizationApplications.filter((application) => {
+      const matchesSearch =
+        !term ||
+        String(application?.public_name || '').toLowerCase().includes(term) ||
+        String(application?.full_name || '').toLowerCase().includes(term) ||
+        String(application?.email || '').toLowerCase().includes(term) ||
+        String(application?.status || '').toLowerCase().includes(term);
+
+      const matchesStatus =
+        monetizationStatusFilter === 'all' ||
+        String(application?.status || '').toLowerCase() === monetizationStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [monetizationApplications, searchTerm, monetizationStatusFilter]);
+
+  const filteredPayoutRequests = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+
+    return payoutRequests.filter((item) => {
+      const matchesSearch =
+        !term ||
+        String(item?.public_name || '').toLowerCase().includes(term) ||
+        String(item?.full_name || '').toLowerCase().includes(term) ||
+        String(item?.email || '').toLowerCase().includes(term) ||
+        String(item?.status || '').toLowerCase().includes(term) ||
+        String(item?.method_type || '').toLowerCase().includes(term);
+
+      const matchesStatus =
+        payoutStatusFilter === 'all' ||
+        String(item?.status || '').toLowerCase() === payoutStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [payoutRequests, searchTerm, payoutStatusFilter]);
+
+  const revenueReserveSummary = useMemo(() => {
+    return adCampaigns.reduce(
+      (acc, campaign) => {
+        const split = getReservedFromCampaign(campaign, revenueSharePolicy);
+        acc.gross += split.gross;
+        acc.creator_reserved += split.creator_reserved;
+        acc.platform_kept += split.platform_kept;
+        return acc;
+      },
+      {
+        gross: 0,
+        creator_reserved: 0,
+        platform_kept: 0,
+      }
+    );
+  }, [adCampaigns, revenueSharePolicy]);
+
   const overviewCards = useMemo(() => {
     const pendingQueue = mergedPendingItems.length;
 
@@ -661,6 +959,14 @@ function AdminDashboardPage() {
       (campaign) => String(campaign?.pause_reason || '').toLowerCase() === 'wallet_exhausted'
     ).length;
 
+    const pendingMonetizationApplications = monetizationApplications.filter(
+      (application) => String(application?.status || '').toLowerCase() === 'pending'
+    ).length;
+
+    const pendingPayouts = payoutRequests.filter(
+      (item) => String(item?.status || '').toLowerCase() === 'pending'
+    ).length;
+
     return [
       { label: 'All Videos', value: videos.length },
       { label: 'Pending Video Reviews', value: pendingQueue },
@@ -679,6 +985,11 @@ function AdminDashboardPage() {
       { label: 'Ad Videos', value: adVideos.length },
       { label: 'Pending Ad Videos', value: pendingAdVideos.length },
       { label: 'Support Conversations', value: supportConversations.length },
+      { label: 'Monetization Applications', value: monetizationApplications.length },
+      { label: 'Pending Monetization', value: pendingMonetizationApplications },
+      { label: 'Pending Payouts', value: pendingPayouts },
+      { label: 'Creator Reserved', value: formatMoney(revenueReserveSummary.creator_reserved) },
+      { label: 'Platform Kept', value: formatMoney(revenueReserveSummary.platform_kept) },
     ];
   }, [
     videos,
@@ -692,6 +1003,9 @@ function AdminDashboardPage() {
     adVideos,
     pendingAdVideos,
     supportConversations,
+    monetizationApplications,
+    revenueReserveSummary,
+    payoutRequests,
   ]);
 
   async function handleApproveVideo(video) {
@@ -1154,7 +1468,7 @@ function AdminDashboardPage() {
           {overviewCards.map((card) => (
             <div className="admin-card" key={card.label}>
               <p className="admin-card-label">{card.label}</p>
-              <h3 className="admin-card-value">{formatCount(card.value)}</h3>
+              <h3 className="admin-card-value">{card.value}</h3>
             </div>
           ))}
         </div>
@@ -1171,6 +1485,30 @@ function AdminDashboardPage() {
           </div>
 
           <div className="admin-panel">
+            <h3>Revenue Share Policy</h3>
+            <div className="admin-meta-list">
+              <div><span>Creator Share:</span> {revenueSharePolicy.creator_share_percent}%</div>
+              <div><span>Platform Share:</span> {revenueSharePolicy.platform_share_percent}%</div>
+              <div><span>Example Gross:</span> ${formatMoney(revenueSplitExample.gross_revenue)}</div>
+              <div><span>Creator Reserve:</span> ${formatMoney(revenueSplitExample.creator_share_amount)}</div>
+              <div><span>Platform Keep:</span> ${formatMoney(revenueSplitExample.platform_share_amount)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-panels-grid">
+          <div className="admin-panel">
+            <h3>Reserved Earnings Summary</h3>
+            <div className="admin-meta-list">
+              <div><span>Total Gross Ads:</span> ${formatMoney(revenueReserveSummary.gross)}</div>
+              <div><span>Creators Owed:</span> ${formatMoney(revenueReserveSummary.creator_reserved)}</div>
+              <div><span>Platform Reserved:</span> ${formatMoney(revenueReserveSummary.platform_kept)}</div>
+              <div><span>Pending Creator Payouts:</span> ${formatMoney(revenueReserveSummary.creator_reserved)}</div>
+              <div><span>Pending Withdrawal Requests:</span> {formatCount(payoutRequests.filter((x) => String(x.status).toLowerCase() === 'pending').length)}</div>
+            </div>
+          </div>
+
+          <div className="admin-panel">
             <h3>Live Admin Scope</h3>
             <pre className="admin-json-block">
 {`- Global all videos admin list
@@ -1181,13 +1519,11 @@ function AdminDashboardPage() {
 - External posting plans list
 - Ad campaigns list + filters
 - Ad videos list + pending list
-- Approve ad campaign
-- Pause ad campaign
-- Delete ad campaign
-- Approve ad video
-- Campaign stats lookup by ID
-- Wallet exhausted notice for paused ads
-- Support chat tab now wired to real API`}
+- Support chat
+- Monetization application approvals
+- Revenue split policy
+- Creator reserved earnings visibility
+- Creator payout request approvals / payment`}
             </pre>
           </div>
         </div>
@@ -1236,11 +1572,7 @@ function AdminDashboardPage() {
                     <td>
                       <div className="admin-title-cell">
                         {video.thumbnail_url ? (
-                          <img
-                            src={video.thumbnail_url}
-                            alt={video.title}
-                            className="admin-thumb"
-                          />
+                          <img src={video.thumbnail_url} alt={video.title} className="admin-thumb" />
                         ) : (
                           <div className="admin-thumb admin-thumb-placeholder">No image</div>
                         )}
@@ -1531,10 +1863,7 @@ function AdminDashboardPage() {
                     </td>
                     <td>
                       <div className="admin-actions">
-                        <button
-                          className="admin-btn secondary"
-                          onClick={() => startEditChannel(channel)}
-                        >
+                        <button className="admin-btn secondary" onClick={() => startEditChannel(channel)}>
                           Edit
                         </button>
                         <button
@@ -1713,10 +2042,7 @@ function AdminDashboardPage() {
                     <td>{category.parent_id || category.parentId || '—'}</td>
                     <td>
                       <div className="admin-actions">
-                        <button
-                          className="admin-btn secondary"
-                          onClick={() => startEditCategory(category)}
-                        >
+                        <button className="admin-btn secondary" onClick={() => startEditCategory(category)}>
                           Edit
                         </button>
                         <button
@@ -1889,16 +2215,27 @@ function AdminDashboardPage() {
           </div>
 
           <div className="admin-panel">
+            <h3>Revenue Reserve Rules</h3>
+            <div className="admin-meta-list">
+              <div><span>Creator Share:</span> {revenueSharePolicy.creator_share_percent}%</div>
+              <div><span>Platform Share:</span> {revenueSharePolicy.platform_share_percent}%</div>
+              <div><span>Total Creators Owed:</span> ${formatMoney(revenueReserveSummary.creator_reserved)}</div>
+              <div><span>Total Platform Keep:</span> ${formatMoney(revenueReserveSummary.platform_kept)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-panels-grid">
+          <div className="admin-panel">
             <h3>Campaign Stats Result</h3>
             <pre className="admin-json-block">
               {JSON.stringify(campaignStats || {}, null, 2)}
             </pre>
           </div>
-        </div>
 
-        <div className="admin-panel">
-          <h3>Ads Endpoint Scope</h3>
-          <pre className="admin-json-block">
+          <div className="admin-panel">
+            <h3>Ads Endpoint Scope</h3>
+            <pre className="admin-json-block">
 {`Creator side
 - POST /api/ads/campaigns
 - POST /api/ads/videos
@@ -1919,7 +2256,8 @@ Performance
 - POST /api/ads/clicks
 - POST /api/ads/skips
 - GET /api/ads/campaigns/:id/stats`}
-          </pre>
+            </pre>
+          </div>
         </div>
 
         <div className="admin-table-wrap" style={{ marginTop: 20 }}>
@@ -1929,11 +2267,11 @@ Performance
                 <th>Campaign ID</th>
                 <th>Advertiser</th>
                 <th>Title</th>
-                <th>Destination</th>
                 <th>Budget</th>
+                <th>Creator Reserve</th>
+                <th>Platform Keep</th>
                 <th>Skip</th>
-                <th>DB Status</th>
-                <th>Live Status</th>
+                <th>Status</th>
                 <th>Dates</th>
                 <th>Notice</th>
                 <th>Actions</th>
@@ -1945,86 +2283,74 @@ Performance
                   <td colSpan="11" className="admin-empty">No ad campaigns found</td>
                 </tr>
               ) : (
-                filteredAdCampaigns.map((campaign) => (
-                  <tr key={campaign.id}>
-                    <td>{campaign.id}</td>
-                    <td>
-                      <div className="admin-strong">{campaign.advertiser_name}</div>
-                      <div className="admin-subtext">{campaign.advertiser_email || '—'}</div>
-                    </td>
-                    <td>
-                      <div className="admin-strong">{campaign.title}</div>
-                      <div className="admin-subtext">{campaign.uuid || '—'}</div>
-                    </td>
-                    <td>{campaign.destination_url || '—'}</td>
-                    <td>₦{formatMoney(campaign.budget)}</td>
-                    <td>{formatCount(campaign.skip_after_seconds)}s</td>
-                    <td>
-                      <span className={`admin-badge ${getStatusClass(campaign.status)}`}>
-                        {campaign.status}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`admin-badge ${getStatusClass(getCampaignRuntimeStatus(campaign))}`}>
-                        {getCampaignRuntimeStatus(campaign)}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="admin-subtext">Start: {formatDate(campaign.starts_at)}</div>
-                      <div className="admin-subtext">End: {formatDate(campaign.ends_at)}</div>
-                    </td>
-                    <td>
-                      {campaign.pause_notice ? (
-                        <div>
-                          <div className="admin-strong">{campaign.pause_notice}</div>
-                          <div className="admin-subtext">
-                            {campaign.pause_reason || 'paused'}
-                            {campaign.paused_at ? ` • ${formatDate(campaign.paused_at)}` : ''}
+                filteredAdCampaigns.map((campaign) => {
+                  const split = getReservedFromCampaign(campaign, revenueSharePolicy);
+
+                  return (
+                    <tr key={campaign.id}>
+                      <td>{campaign.id}</td>
+                      <td>
+                        <div className="admin-strong">{campaign.advertiser_name}</div>
+                        <div className="admin-subtext">{campaign.advertiser_email || '—'}</div>
+                      </td>
+                      <td>
+                        <div className="admin-strong">{campaign.title}</div>
+                        <div className="admin-subtext">{campaign.uuid || '—'}</div>
+                      </td>
+                      <td>${formatMoney(campaign.budget)}</td>
+                      <td>${formatMoney(split.creator_reserved)}</td>
+                      <td>${formatMoney(split.platform_kept)}</td>
+                      <td>{formatCount(campaign.skip_after_seconds)}s</td>
+                      <td>
+                        <span className={`admin-badge ${getStatusClass(getCampaignRuntimeStatus(campaign))}`}>
+                          {getCampaignRuntimeStatus(campaign)}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="admin-subtext">Start: {formatDate(campaign.starts_at)}</div>
+                        <div className="admin-subtext">End: {formatDate(campaign.ends_at)}</div>
+                      </td>
+                      <td>
+                        {campaign.pause_notice ? (
+                          <div>
+                            <div className="admin-strong">{campaign.pause_notice}</div>
+                            <div className="admin-subtext">
+                              {campaign.pause_reason || 'paused'}
+                              {campaign.paused_at ? ` • ${formatDate(campaign.paused_at)}` : ''}
+                            </div>
                           </div>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td>
+                        <div className="admin-actions">
+                          <button
+                            className="admin-btn success"
+                            disabled={actionLoadingId === `approve-campaign-${campaign.id}`}
+                            onClick={() => handleApproveCampaign(campaign.id)}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            className="admin-btn warning"
+                            disabled={actionLoadingId === `pause-campaign-${campaign.id}`}
+                            onClick={() => handlePauseCampaign(campaign.id)}
+                          >
+                            Pause
+                          </button>
+                          <button
+                            className="admin-btn danger"
+                            disabled={actionLoadingId === `delete-campaign-${campaign.id}`}
+                            onClick={() => handleDeleteCampaign(campaign.id)}
+                          >
+                            Delete
+                          </button>
                         </div>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td>
-                      <div className="admin-actions">
-                        <button
-                          className="admin-btn success"
-                          disabled={actionLoadingId === `approve-campaign-${campaign.id}`}
-                          onClick={() => handleApproveCampaign(campaign.id)}
-                        >
-                          Approve
-                        </button>
-                        <button
-                          className="admin-btn warning"
-                          disabled={actionLoadingId === `pause-campaign-${campaign.id}`}
-                          onClick={() => handlePauseCampaign(campaign.id)}
-                        >
-                          Pause
-                        </button>
-                        <button
-                          className="admin-btn danger"
-                          disabled={actionLoadingId === `delete-campaign-${campaign.id}`}
-                          onClick={() => handleDeleteCampaign(campaign.id)}
-                        >
-                          Delete
-                        </button>
-                        <button
-                          className="admin-btn secondary"
-                          onClick={() =>
-                            setAdTools((prev) => ({
-                              ...prev,
-                              campaignId: String(campaign.id),
-                              statsCampaignId: String(campaign.id),
-                            }))
-                          }
-                        >
-                          Use ID
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -2166,24 +2492,16 @@ Performance
                     <div className="video-main">
                       <div>
                         <h4>{conversation.subject || `Conversation #${conversation.id}`}</h4>
-                        <p>
-                          {conversation.user_full_name || conversation.user_username || 'Unknown user'}
-                          {conversation.user_email ? ` • ${conversation.user_email}` : ''}
-                        </p>
-                        <p>{conversation.last_message_text || 'No preview yet.'}</p>
-                        <p>{formatDate(conversation.last_message_at || conversation.created_at)}</p>
+                        <p>{conversation.user_full_name || conversation.user_email || 'Unknown user'}</p>
+                        <p>{conversation.last_message_text || 'No message yet'}</p>
                       </div>
                     </div>
 
                     <div className="video-meta">
                       <span className={`admin-badge ${getStatusClass(conversation.status)}`}>
-                        {conversation.status || 'open'}
+                        {conversation.status}
                       </span>
-                      {Number(conversation.unread_count || 0) > 0 ? (
-                        <span>{conversation.unread_count} unread</span>
-                      ) : (
-                        <span>Read</span>
-                      )}
+                      <span>{conversation.unread_count ? `${conversation.unread_count} unread` : 'read'}</span>
                     </div>
                   </button>
                 ))}
@@ -2195,127 +2513,427 @@ Performance
             <h3>Conversation Details</h3>
 
             {!selectedSupportConversationId ? (
-              <div className="admin-empty">Select a conversation first</div>
+              <div className="admin-empty">Select a support conversation first</div>
             ) : supportConversationLoading ? (
               <div className="admin-empty">Loading conversation...</div>
             ) : (
               <>
                 <div className="marketplace-status-box" style={{ marginBottom: 16 }}>
                   <div className="marketplace-row">
+                    <span>Subject</span>
+                    <strong>{selectedSupportConversation?.subject || '—'}</strong>
+                  </div>
+                  <div className="marketplace-row">
                     <span>User</span>
-                    <strong>
-                      {selectedSupportConversation?.user_full_name ||
-                        selectedSupportConversation?.user?.full_name ||
-                        selectedSupportConversation?.user_email ||
-                        '—'}
-                    </strong>
+                    <strong>{selectedSupportConversation?.user_full_name || selectedSupportConversation?.user_email || '—'}</strong>
                   </div>
                   <div className="marketplace-row">
                     <span>Status</span>
-                    <strong>{selectedSupportConversation?.status || 'open'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Created</span>
-                    <strong>{formatDate(selectedSupportConversation?.created_at)}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Last Message</span>
-                    <strong>
-                      {formatDate(
-                        selectedSupportConversation?.last_message_at ||
-                          selectedSupportConversation?.updated_at
-                      )}
-                    </strong>
+                    <strong>{selectedSupportConversation?.status || '—'}</strong>
                   </div>
                 </div>
 
                 <div className="admin-actions" style={{ marginBottom: 16 }}>
-                  <button
-                    className="admin-btn success"
-                    disabled={supportStatusUpdating}
-                    onClick={() => handleSupportStatusChange('open')}
-                  >
-                    Mark Open
-                  </button>
-                  <button
-                    className="admin-btn warning"
-                    disabled={supportStatusUpdating}
-                    onClick={() => handleSupportStatusChange('pending')}
-                  >
-                    Mark Pending
-                  </button>
-                  <button
-                    className="admin-btn secondary"
-                    disabled={supportStatusUpdating}
-                    onClick={() => handleSupportStatusChange('closed')}
-                  >
-                    Mark Closed
-                  </button>
+                  <button className="admin-btn secondary" disabled={supportStatusUpdating} onClick={() => handleSupportStatusChange('open')}>Open</button>
+                  <button className="admin-btn warning" disabled={supportStatusUpdating} onClick={() => handleSupportStatusChange('pending')}>Pending</button>
+                  <button className="admin-btn success" disabled={supportStatusUpdating} onClick={() => handleSupportStatusChange('closed')}>Closed</button>
                 </div>
 
-                <div className="videogad-video-table">
-                  {supportMessages.length === 0 ? (
-                    <div className="admin-empty">No messages yet</div>
-                  ) : (
-                    supportMessages.map((message) => {
-                      const isAdmin =
-                        String(message?.sender_role || '').toLowerCase() === 'admin';
-
-                      return (
-                        <div
-                          key={message.id}
-                          className="videogad-video-row"
-                          style={{
-                            borderLeft: isAdmin
-                              ? '4px solid rgba(255, 89, 149, 0.9)'
-                              : '4px solid rgba(94, 234, 212, 0.9)',
-                          }}
-                        >
-                          <div className="video-main">
-                            <div>
-                              <h4>
-                                {isAdmin
-                                  ? 'Admin'
-                                  : message?.full_name || message?.username || 'User'}
-                              </h4>
-                              <p style={{ whiteSpace: 'pre-wrap' }}>
-                                {message?.message_text || ''}
-                              </p>
-                              <p>{formatDate(message?.created_at)}</p>
-                            </div>
-                          </div>
-
-                          <div className="video-meta">
-                            <span className={`admin-badge ${getStatusClass(message?.sender_role)}`}>
-                              {message?.sender_role || 'viewer'}
-                            </span>
-                            <span>{Number(message?.is_read) === 1 ? 'Read' : 'Unread'}</span>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
+                <div className="admin-json-block" style={{ marginBottom: 16, minHeight: 180 }}>
+                  {supportMessages.length
+                    ? supportMessages.map((message) => {
+                        const senderName = message?.full_name || message?.email || message?.sender_role || 'User';
+                        return `[${formatDate(message.created_at)}] ${senderName}: ${message.message_text}`;
+                      }).join('\n\n')
+                    : 'No messages yet'}
                 </div>
 
-                <form className="admin-form" onSubmit={handleSendSupportReply} style={{ marginTop: 16 }}>
+                <form onSubmit={handleSendSupportReply} className="admin-form">
                   <textarea
                     className="admin-input admin-textarea"
-                    placeholder="Write your reply..."
+                    placeholder="Write admin reply..."
                     value={supportReplyMessage}
                     onChange={(e) => setSupportReplyMessage(e.target.value)}
-                    rows={4}
                   />
-
                   <div className="admin-actions">
-                    <button
-                      type="submit"
-                      className="admin-btn success"
-                      disabled={supportSending}
-                    >
-                      {supportSending ? 'Sending...' : 'Send Reply'}
+                    <button className="admin-btn success" disabled={supportSending} type="submit">
+                      Send Reply
                     </button>
                   </div>
                 </form>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderMonetization() {
+    return (
+      <div className="admin-section">
+        <div className="admin-toolbar">
+          <input
+            type="text"
+            className="admin-search"
+            placeholder="Search public name, email, status."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+
+          <select
+            className="admin-input"
+            style={{ maxWidth: 220 }}
+            value={monetizationStatusFilter}
+            onChange={(e) => setMonetizationStatusFilter(e.target.value)}
+          >
+            <option value="all">All Applications</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+
+          <button
+            className="admin-btn secondary"
+            onClick={() => loadMonetizationApplications(selectedMonetizationApplicationId)}
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="admin-panels-grid">
+          <div className="admin-panel">
+            <h3>Revenue Sharing Formula</h3>
+            <div className="admin-meta-list">
+              <div><span>Creator:</span> {revenueSharePolicy.creator_share_percent}%</div>
+              <div><span>Platform:</span> {revenueSharePolicy.platform_share_percent}%</div>
+              <div><span>$100 Example Creator:</span> ${formatMoney(revenueSplitExample.creator_share_amount)}</div>
+              <div><span>$100 Example Platform:</span> ${formatMoney(revenueSplitExample.platform_share_amount)}</div>
+            </div>
+          </div>
+
+          <div className="admin-panel">
+            <h3>Admin Reserve View</h3>
+            <div className="admin-meta-list">
+              <div><span>Total Ad Revenue Seen:</span> ${formatMoney(revenueReserveSummary.gross)}</div>
+              <div><span>Reserved For Creators:</span> ${formatMoney(revenueReserveSummary.creator_reserved)}</div>
+              <div><span>Reserved For Platform:</span> ${formatMoney(revenueReserveSummary.platform_kept)}</div>
+              <div><span>Payout Safe Balance:</span> ${formatMoney(revenueReserveSummary.creator_reserved)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-panels-grid">
+          <div className="admin-panel">
+            <h3>Monetization Applications</h3>
+
+            {monetizationLoading ? (
+              <div className="admin-empty">Loading monetization applications...</div>
+            ) : filteredMonetizationApplications.length === 0 ? (
+              <div className="admin-empty">No monetization applications found</div>
+            ) : (
+              <div className="videogad-video-table">
+                {filteredMonetizationApplications.map((application) => (
+                  <button
+                    key={application.id}
+                    type="button"
+                    className="videogad-video-row"
+                    onClick={() => loadMonetizationApplication(application.id)}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      background:
+                        Number(selectedMonetizationApplicationId) === Number(application.id)
+                          ? 'rgba(255,255,255,0.05)'
+                          : undefined,
+                      border:
+                        Number(selectedMonetizationApplicationId) === Number(application.id)
+                          ? '1px solid rgba(255,255,255,0.14)'
+                          : '1px solid transparent',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div className="video-main">
+                      <div>
+                        <h4>{application.public_name || application.full_name || `Application #${application.id}`}</h4>
+                        <p>{application.email || 'No email'}</p>
+                        <p>Subscribers: {formatCount(application.subscriber_count)}</p>
+                        <p>Views: {formatCount(application.total_video_views)} • Watch Hours: {formatHours(application.total_watch_hours)}h</p>
+                      </div>
+                    </div>
+
+                    <div className="video-meta">
+                      <span className={`admin-badge ${getStatusClass(application.status)}`}>
+                        {application.status}
+                      </span>
+                      <span>
+                        {application.has_active_external_subscription ? 'Subscription Active' : 'No Active Subscription'}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="admin-panel">
+            <h3>Application Details</h3>
+
+            {!selectedMonetizationApplicationId ? (
+              <div className="admin-empty">Select a monetization application first</div>
+            ) : !selectedMonetizationApplication ? (
+              <div className="admin-empty">Loading application.</div>
+            ) : (
+              <>
+                <div className="marketplace-status-box" style={{ marginBottom: 16 }}>
+                  <div className="marketplace-row">
+                    <span>Creator</span>
+                    <strong>
+                      {selectedMonetizationApplication.public_name ||
+                        selectedMonetizationApplication.full_name ||
+                        '—'}
+                    </strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Email</span>
+                    <strong>{selectedMonetizationApplication.email || '—'}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Status</span>
+                    <strong>{selectedMonetizationApplication.status || '—'}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Subscribers</span>
+                    <strong>{formatCount(selectedMonetizationApplication.subscriber_count)}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Total Views</span>
+                    <strong>{formatCount(selectedMonetizationApplication.total_video_views)}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Watch Hours</span>
+                    <strong>{formatHours(selectedMonetizationApplication.total_watch_hours)}h</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Revenue Formula</span>
+                    <strong>
+                      Creator {revenueSharePolicy.creator_share_percent}% / Platform {revenueSharePolicy.platform_share_percent}%
+                    </strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>$100 Example</span>
+                    <strong>
+                      Creator ${formatMoney(revenueSplitExample.creator_share_amount)} / Platform ${formatMoney(revenueSplitExample.platform_share_amount)}
+                    </strong>
+                  </div>
+                  {selectedMonetizationApplication.admin_note ? (
+                    <div className="marketplace-row">
+                      <span>Admin Note</span>
+                      <strong>{selectedMonetizationApplication.admin_note}</strong>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="admin-actions">
+                  <button
+                    className="admin-btn success"
+                    disabled={monetizationActionLoading}
+                    onClick={() => handleMonetizationDecision('approved')}
+                  >
+                    Approve
+                  </button>
+
+                  <button
+                    className="admin-btn warning"
+                    disabled={monetizationActionLoading}
+                    onClick={() => handleMonetizationDecision('rejected')}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderPayouts() {
+    return (
+      <div className="admin-section">
+        <div className="admin-toolbar">
+          <input
+            type="text"
+            className="admin-search"
+            placeholder="Search creator, email, method, payout status..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+
+          <select
+            className="admin-input"
+            style={{ maxWidth: 220 }}
+            value={payoutStatusFilter}
+            onChange={(e) => setPayoutStatusFilter(e.target.value)}
+          >
+            <option value="all">All Payouts</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="paid">Paid</option>
+          </select>
+
+          <button
+            className="admin-btn secondary"
+            onClick={() => loadPayoutRequests(selectedPayoutRequestId)}
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="admin-panels-grid">
+          <div className="admin-panel">
+            <h3>Payout Requests</h3>
+
+            {payoutLoading ? (
+              <div className="admin-empty">Loading payout requests...</div>
+            ) : filteredPayoutRequests.length === 0 ? (
+              <div className="admin-empty">No payout requests found</div>
+            ) : (
+              <div className="videogad-video-table">
+                {filteredPayoutRequests.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="videogad-video-row"
+                    onClick={() => {
+                      setSelectedPayoutRequestId(Number(item.id));
+                      setSelectedPayoutRequest(item);
+                    }}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      background:
+                        Number(selectedPayoutRequestId) === Number(item.id)
+                          ? 'rgba(255,255,255,0.05)'
+                          : undefined,
+                      border:
+                        Number(selectedPayoutRequestId) === Number(item.id)
+                          ? '1px solid rgba(255,255,255,0.14)'
+                          : '1px solid transparent',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div className="video-main">
+                      <div>
+                        <h4>{item.public_name || item.full_name || `Payout #${item.id}`}</h4>
+                        <p>{item.email || 'No email'}</p>
+                        <p>Amount: ${formatMoney(item.amount)} • Method: {item.method_type || '—'}</p>
+                      </div>
+                    </div>
+
+                    <div className="video-meta">
+                      <span className={`admin-badge ${getStatusClass(item.status)}`}>
+                        {item.status}
+                      </span>
+                      <span>{item.currency_code || 'USD'}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="admin-panel">
+            <h3>Payout Details</h3>
+
+            {!selectedPayoutRequestId ? (
+              <div className="admin-empty">Select a payout request first</div>
+            ) : !selectedPayoutRequest ? (
+              <div className="admin-empty">Loading payout request.</div>
+            ) : (
+              <>
+                <div className="marketplace-status-box" style={{ marginBottom: 16 }}>
+                  <div className="marketplace-row">
+                    <span>Creator</span>
+                    <strong>{selectedPayoutRequest.public_name || selectedPayoutRequest.full_name || '—'}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Email</span>
+                    <strong>{selectedPayoutRequest.email || '—'}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Amount</span>
+                    <strong>${formatMoney(selectedPayoutRequest.amount)}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Currency</span>
+                    <strong>{selectedPayoutRequest.currency_code || 'USD'}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Status</span>
+                    <strong>{selectedPayoutRequest.status || '—'}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Requested At</span>
+                    <strong>{formatDate(selectedPayoutRequest.requested_at || selectedPayoutRequest.created_at)}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Available Balance</span>
+                    <strong>${formatMoney(selectedPayoutRequest.available_balance)}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Method Type</span>
+                    <strong>{selectedPayoutRequest.method_type || '—'}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Account Name</span>
+                    <strong>{selectedPayoutRequest.account_name || '—'}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Account Number</span>
+                    <strong>{selectedPayoutRequest.account_number || '—'}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Bank Name</span>
+                    <strong>{selectedPayoutRequest.bank_name || '—'}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Wallet Address</span>
+                    <strong>{selectedPayoutRequest.wallet_address || '—'}</strong>
+                  </div>
+                </div>
+
+                <div className="admin-actions">
+                  <button
+                    className="admin-btn success"
+                    disabled={payoutActionLoading || String(selectedPayoutRequest.status || '').toLowerCase() === 'paid'}
+                    onClick={() => handlePayoutStatus('approved')}
+                  >
+                    Approve
+                  </button>
+
+                  <button
+                    className="admin-btn warning"
+                    disabled={payoutActionLoading || String(selectedPayoutRequest.status || '').toLowerCase() === 'paid'}
+                    onClick={() => handlePayoutStatus('rejected')}
+                  >
+                    Reject
+                  </button>
+
+                  <button
+                    className="admin-btn secondary"
+                    disabled={
+                      payoutActionLoading ||
+                      String(selectedPayoutRequest.status || '').toLowerCase() === 'rejected' ||
+                      String(selectedPayoutRequest.status || '').toLowerCase() === 'paid'
+                    }
+                    onClick={handleMarkPayoutPaid}
+                  >
+                    Mark Paid
+                  </button>
+                </div>
               </>
             )}
           </div>
@@ -2344,13 +2962,17 @@ Performance
         return renderAds();
       case 'support':
         return renderSupport();
+      case 'monetization':
+        return renderMonetization();
+      case 'payouts':
+        return renderPayouts();
       default:
         return renderOverview();
     }
   }
 
   if (!sessionChecked || loading) {
-    return <div className="admin-loading">Loading admin dashboard...</div>;
+    return <div className="admin-loading">Loading admin dashboard.</div>;
   }
 
   if (!authorized) {
@@ -2388,12 +3010,10 @@ Performance
               className={`admin-nav-item ${activeTab === tab.key ? 'active' : ''}`}
               onClick={() => {
                 setSearchTerm('');
-                if (tab.key !== 'ads') {
-                  setAdsStatusFilter('all');
-                }
-                if (tab.key !== 'support') {
-                  setSupportStatusFilter('all');
-                }
+                if (tab.key !== 'ads') setAdsStatusFilter('all');
+                if (tab.key !== 'support') setSupportStatusFilter('all');
+                if (tab.key !== 'monetization') setMonetizationStatusFilter('all');
+                if (tab.key !== 'payouts') setPayoutStatusFilter('all');
                 setActiveTab(tab.key);
               }}
             >
@@ -2409,6 +3029,17 @@ Performance
               loadSupportConversations(selectedSupportConversationId);
               return;
             }
+
+            if (activeTab === 'monetization') {
+              loadMonetizationApplications(selectedMonetizationApplicationId);
+              return;
+            }
+
+            if (activeTab === 'payouts') {
+              loadPayoutRequests(selectedPayoutRequestId);
+              return;
+            }
+
             loadAll();
           }}
         >

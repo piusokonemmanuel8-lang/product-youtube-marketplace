@@ -2,8 +2,73 @@ const crypto = require('crypto');
 const pool = require('../config/db');
 const { debitWalletForAdSpend } = require('./walletController');
 
+const CREATOR_SHARE_PERCENT = 55;
+const PLATFORM_SHARE_PERCENT = 45;
+
 function roundMoney(value) {
   return Number((Number(value || 0)).toFixed(4));
+}
+
+function calculateRevenueSplit(amount) {
+  const grossRevenue = roundMoney(amount || 0);
+  const creatorShareAmount = roundMoney((grossRevenue * CREATOR_SHARE_PERCENT) / 100);
+  const platformShareAmount = roundMoney(grossRevenue - creatorShareAmount);
+
+  return {
+    gross_revenue: grossRevenue,
+    creator_share_percent: CREATOR_SHARE_PERCENT,
+    platform_share_percent: PLATFORM_SHARE_PERCENT,
+    creator_share_amount: creatorShareAmount,
+    platform_share_amount: platformShareAmount,
+  };
+}
+
+async function getEligibleHostVideoOwner(viewerVideoId) {
+  if (!viewerVideoId) {
+    return null;
+  }
+
+  const [rows] = await pool.query(
+    `SELECT
+       v.id AS video_id,
+       v.creator_id,
+       v.title AS video_title,
+       cp.user_id,
+       cp.public_name,
+       cms.is_monetized,
+       cp.monetization_status
+     FROM videos v
+     INNER JOIN creator_profiles cp ON cp.id = v.creator_id
+     LEFT JOIN creator_monetization_status cms ON cms.creator_id = v.creator_id
+     WHERE v.id = ?
+       AND v.status = 'published'
+       AND v.moderation_status = 'approved'
+       AND v.visibility = 'public'
+     LIMIT 1`,
+    [viewerVideoId]
+  );
+
+  if (!rows.length) {
+    return null;
+  }
+
+  const row = rows[0];
+  const isMonetized =
+    Number(row.is_monetized || 0) === 1 ||
+    String(row.monetization_status || '').toLowerCase() === 'approved';
+
+  if (!isMonetized) {
+    return null;
+  }
+
+  return {
+    video_id: row.video_id,
+    creator_id: row.creator_id,
+    user_id: row.user_id,
+    public_name: row.public_name,
+    video_title: row.video_title,
+    is_monetized: true,
+  };
 }
 
 async function pauseCampaignForWallet(campaignId) {
@@ -214,6 +279,32 @@ async function trackAdClick(req, res) {
       await pauseCampaignForWallet(campaign_id);
     }
 
+    const hostVideoOwner = await getEligibleHostVideoOwner(viewer_video_id);
+    const baseSplit = calculateRevenueSplit(debitAmount);
+
+    const revenueAllocation = hostVideoOwner
+      ? {
+          ...baseSplit,
+          host_video_owner_creator_id: hostVideoOwner.creator_id,
+          host_video_owner_user_id: hostVideoOwner.user_id,
+          host_video_owner_public_name: hostVideoOwner.public_name,
+          host_video_id: hostVideoOwner.video_id,
+          host_video_title: hostVideoOwner.video_title,
+          creator_share_reserved: true,
+        }
+      : {
+          ...baseSplit,
+          creator_share_amount: 0,
+          platform_share_amount: roundMoney(debitAmount),
+          host_video_owner_creator_id: null,
+          host_video_owner_user_id: null,
+          host_video_owner_public_name: null,
+          host_video_id: viewer_video_id || null,
+          host_video_title: null,
+          creator_share_reserved: false,
+          note: 'No eligible monetized host creator found for this viewer video',
+        };
+
     return res.status(201).json({
       message: 'Ad click tracked successfully',
       click_id: result.insertId,
@@ -222,6 +313,7 @@ async function trackAdClick(req, res) {
       campaign_paused: Number(debitResult.wallet?.balance || 0) <= 0,
       daily_spend_today: roundMoney(dailySpendToday + debitAmount),
       daily_budget_cap: dailyBudgetCap,
+      revenue_allocation: revenueAllocation,
     });
   } catch (error) {
     return res.status(500).json({
@@ -233,4 +325,6 @@ async function trackAdClick(req, res) {
 
 module.exports = {
   trackAdClick,
+  calculateRevenueSplit,
+  getEligibleHostVideoOwner,
 };
