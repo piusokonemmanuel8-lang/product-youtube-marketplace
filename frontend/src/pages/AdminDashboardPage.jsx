@@ -11,6 +11,7 @@ const TABS = [
   { key: 'categories', label: 'Categories' },
   { key: 'plans', label: 'External Plans' },
   { key: 'ads', label: 'Ads Control' },
+  { key: 'support', label: 'Support Chat' },
 ];
 
 function formatDate(value) {
@@ -132,6 +133,13 @@ function campaignMatchesFilter(campaign, filterValue) {
   return runtimeStatus === filterValue || dbStatus === filterValue;
 }
 
+function normalizeConversationList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.conversations)) return data.conversations;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+}
+
 function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
@@ -155,6 +163,17 @@ function AdminDashboardPage() {
   const [pendingAdCampaigns, setPendingAdCampaigns] = useState([]);
   const [adVideos, setAdVideos] = useState([]);
   const [pendingAdVideos, setPendingAdVideos] = useState([]);
+
+  const [supportConversations, setSupportConversations] = useState([]);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportConversationLoading, setSupportConversationLoading] = useState(false);
+  const [selectedSupportConversationId, setSelectedSupportConversationId] = useState(null);
+  const [selectedSupportConversation, setSelectedSupportConversation] = useState(null);
+  const [supportMessages, setSupportMessages] = useState([]);
+  const [supportReplyMessage, setSupportReplyMessage] = useState('');
+  const [supportStatusFilter, setSupportStatusFilter] = useState('all');
+  const [supportStatusUpdating, setSupportStatusUpdating] = useState(false);
+  const [supportSending, setSupportSending] = useState(false);
 
   const [categoryForm, setCategoryForm] = useState({
     name: '',
@@ -279,6 +298,156 @@ function AdminDashboardPage() {
       setError(err.message || 'Failed to load admin dashboard');
     } finally {
       setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'support') {
+      loadSupportConversations();
+    }
+  }, [activeTab]);
+
+  async function loadSupportConversations(preferredConversationId = null) {
+    setSupportLoading(true);
+
+    try {
+      const params = {};
+
+      if (supportStatusFilter && supportStatusFilter !== 'all') {
+        params.status = supportStatusFilter;
+      }
+
+      if (searchTerm.trim()) {
+        params.search = searchTerm.trim();
+      }
+
+      const response = await adminService.getSupportConversations(params);
+      const items = normalizeConversationList(response);
+
+      setSupportConversations(Array.isArray(items) ? items : []);
+
+      const nextId =
+        preferredConversationId ||
+        selectedSupportConversationId ||
+        items?.[0]?.id ||
+        null;
+
+      if (nextId) {
+        await loadSupportConversation(nextId);
+      } else {
+        setSelectedSupportConversationId(null);
+        setSelectedSupportConversation(null);
+        setSupportMessages([]);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to load support conversations');
+    } finally {
+      setSupportLoading(false);
+    }
+  }
+
+  async function loadSupportConversation(conversationId) {
+    if (!conversationId) return;
+
+    setSupportConversationLoading(true);
+
+    try {
+      const detail = await adminService.getSupportConversationById(conversationId);
+      setSelectedSupportConversationId(Number(conversationId));
+      setSelectedSupportConversation(detail?.conversation || null);
+      setSupportMessages(Array.isArray(detail?.messages) ? detail.messages : []);
+
+      setSupportConversations((prev) =>
+        prev.map((item) =>
+          Number(item.id) === Number(conversationId)
+            ? { ...item, unread_count: 0 }
+            : item
+        )
+      );
+    } catch (err) {
+      setError(err.message || 'Failed to open support conversation');
+    } finally {
+      setSupportConversationLoading(false);
+    }
+  }
+
+  async function handleSendSupportReply(event) {
+    event.preventDefault();
+
+    if (!selectedSupportConversationId) {
+      setError('Select a support conversation first');
+      return;
+    }
+
+    const messageText = String(supportReplyMessage || '').trim();
+
+    if (!messageText) {
+      setError('Reply message is required');
+      return;
+    }
+
+    setSupportSending(true);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      const detail = await adminService.sendSupportReply(selectedSupportConversationId, {
+        message_text: messageText,
+      });
+
+      setSupportReplyMessage('');
+      setSelectedSupportConversation(detail?.conversation || null);
+      setSupportMessages(Array.isArray(detail?.messages) ? detail.messages : []);
+      setSuccessMessage('Support reply sent');
+
+      await loadSupportConversations(selectedSupportConversationId);
+    } catch (err) {
+      setError(err.message || 'Failed to send support reply');
+    } finally {
+      setSupportSending(false);
+    }
+  }
+
+  async function handleSupportStatusChange(status) {
+    if (!selectedSupportConversationId) {
+      setError('Select a support conversation first');
+      return;
+    }
+
+    setSupportStatusUpdating(true);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      const response = await adminService.updateSupportConversationStatus(
+        selectedSupportConversationId,
+        status
+      );
+
+      const updatedConversation =
+        response?.conversation ||
+        response?.data?.conversation ||
+        selectedSupportConversation;
+
+      setSelectedSupportConversation((prev) => ({
+        ...(prev || {}),
+        ...(updatedConversation || {}),
+        status,
+      }));
+
+      setSupportConversations((prev) =>
+        prev.map((item) =>
+          Number(item.id) === Number(selectedSupportConversationId)
+            ? { ...item, status }
+            : item
+        )
+      );
+
+      setSuccessMessage(`Conversation marked as ${status}`);
+    } catch (err) {
+      setError(err.message || 'Failed to update support status');
+    } finally {
+      setSupportStatusUpdating(false);
     }
   }
 
@@ -440,6 +609,27 @@ function AdminDashboardPage() {
     });
   }, [adVideos, searchTerm, adsStatusFilter]);
 
+  const filteredSupportConversations = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+
+    return supportConversations.filter((conversation) => {
+      const matchesSearch =
+        !term ||
+        String(conversation?.subject || '').toLowerCase().includes(term) ||
+        String(conversation?.user_full_name || '').toLowerCase().includes(term) ||
+        String(conversation?.user_email || '').toLowerCase().includes(term) ||
+        String(conversation?.user_username || '').toLowerCase().includes(term) ||
+        String(conversation?.status || '').toLowerCase().includes(term) ||
+        String(conversation?.last_message_text || '').toLowerCase().includes(term);
+
+      const matchesStatus =
+        supportStatusFilter === 'all' ||
+        String(conversation?.status || '').toLowerCase() === supportStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [supportConversations, searchTerm, supportStatusFilter]);
+
   const overviewCards = useMemo(() => {
     const pendingQueue = mergedPendingItems.length;
 
@@ -488,6 +678,7 @@ function AdminDashboardPage() {
       { label: 'Ended Ad Campaigns', value: endedCampaigns },
       { label: 'Ad Videos', value: adVideos.length },
       { label: 'Pending Ad Videos', value: pendingAdVideos.length },
+      { label: 'Support Conversations', value: supportConversations.length },
     ];
   }, [
     videos,
@@ -500,6 +691,7 @@ function AdminDashboardPage() {
     pendingAdCampaigns,
     adVideos,
     pendingAdVideos,
+    supportConversations,
   ]);
 
   async function handleApproveVideo(video) {
@@ -994,7 +1186,8 @@ function AdminDashboardPage() {
 - Delete ad campaign
 - Approve ad video
 - Campaign stats lookup by ID
-- Wallet exhausted notice for paused ads`}
+- Wallet exhausted notice for paused ads
+- Support chat tab now wired to real API`}
             </pre>
           </div>
         </div>
@@ -1908,6 +2101,229 @@ Performance
     );
   }
 
+  function renderSupport() {
+    return (
+      <div className="admin-section">
+        <div className="admin-toolbar">
+          <input
+            type="text"
+            className="admin-search"
+            placeholder="Search subject, user, email, status..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+
+          <select
+            className="admin-input"
+            style={{ maxWidth: 220 }}
+            value={supportStatusFilter}
+            onChange={(e) => setSupportStatusFilter(e.target.value)}
+          >
+            <option value="all">All Conversations</option>
+            <option value="open">Open</option>
+            <option value="pending">Pending</option>
+            <option value="closed">Closed</option>
+          </select>
+
+          <button
+            className="admin-btn secondary"
+            onClick={() => loadSupportConversations(selectedSupportConversationId)}
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="admin-panels-grid">
+          <div className="admin-panel">
+            <h3>All Conversations</h3>
+
+            {supportLoading ? (
+              <div className="admin-empty">Loading conversations...</div>
+            ) : filteredSupportConversations.length === 0 ? (
+              <div className="admin-empty">No support conversations found</div>
+            ) : (
+              <div className="videogad-video-table">
+                {filteredSupportConversations.map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    className="videogad-video-row"
+                    onClick={() => loadSupportConversation(conversation.id)}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      background:
+                        Number(selectedSupportConversationId) === Number(conversation.id)
+                          ? 'rgba(255,255,255,0.05)'
+                          : undefined,
+                      border:
+                        Number(selectedSupportConversationId) === Number(conversation.id)
+                          ? '1px solid rgba(255,255,255,0.14)'
+                          : '1px solid transparent',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div className="video-main">
+                      <div>
+                        <h4>{conversation.subject || `Conversation #${conversation.id}`}</h4>
+                        <p>
+                          {conversation.user_full_name || conversation.user_username || 'Unknown user'}
+                          {conversation.user_email ? ` • ${conversation.user_email}` : ''}
+                        </p>
+                        <p>{conversation.last_message_text || 'No preview yet.'}</p>
+                        <p>{formatDate(conversation.last_message_at || conversation.created_at)}</p>
+                      </div>
+                    </div>
+
+                    <div className="video-meta">
+                      <span className={`admin-badge ${getStatusClass(conversation.status)}`}>
+                        {conversation.status || 'open'}
+                      </span>
+                      {Number(conversation.unread_count || 0) > 0 ? (
+                        <span>{conversation.unread_count} unread</span>
+                      ) : (
+                        <span>Read</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="admin-panel">
+            <h3>Conversation Details</h3>
+
+            {!selectedSupportConversationId ? (
+              <div className="admin-empty">Select a conversation first</div>
+            ) : supportConversationLoading ? (
+              <div className="admin-empty">Loading conversation...</div>
+            ) : (
+              <>
+                <div className="marketplace-status-box" style={{ marginBottom: 16 }}>
+                  <div className="marketplace-row">
+                    <span>User</span>
+                    <strong>
+                      {selectedSupportConversation?.user_full_name ||
+                        selectedSupportConversation?.user?.full_name ||
+                        selectedSupportConversation?.user_email ||
+                        '—'}
+                    </strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Status</span>
+                    <strong>{selectedSupportConversation?.status || 'open'}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Created</span>
+                    <strong>{formatDate(selectedSupportConversation?.created_at)}</strong>
+                  </div>
+                  <div className="marketplace-row">
+                    <span>Last Message</span>
+                    <strong>
+                      {formatDate(
+                        selectedSupportConversation?.last_message_at ||
+                          selectedSupportConversation?.updated_at
+                      )}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="admin-actions" style={{ marginBottom: 16 }}>
+                  <button
+                    className="admin-btn success"
+                    disabled={supportStatusUpdating}
+                    onClick={() => handleSupportStatusChange('open')}
+                  >
+                    Mark Open
+                  </button>
+                  <button
+                    className="admin-btn warning"
+                    disabled={supportStatusUpdating}
+                    onClick={() => handleSupportStatusChange('pending')}
+                  >
+                    Mark Pending
+                  </button>
+                  <button
+                    className="admin-btn secondary"
+                    disabled={supportStatusUpdating}
+                    onClick={() => handleSupportStatusChange('closed')}
+                  >
+                    Mark Closed
+                  </button>
+                </div>
+
+                <div className="videogad-video-table">
+                  {supportMessages.length === 0 ? (
+                    <div className="admin-empty">No messages yet</div>
+                  ) : (
+                    supportMessages.map((message) => {
+                      const isAdmin =
+                        String(message?.sender_role || '').toLowerCase() === 'admin';
+
+                      return (
+                        <div
+                          key={message.id}
+                          className="videogad-video-row"
+                          style={{
+                            borderLeft: isAdmin
+                              ? '4px solid rgba(255, 89, 149, 0.9)'
+                              : '4px solid rgba(94, 234, 212, 0.9)',
+                          }}
+                        >
+                          <div className="video-main">
+                            <div>
+                              <h4>
+                                {isAdmin
+                                  ? 'Admin'
+                                  : message?.full_name || message?.username || 'User'}
+                              </h4>
+                              <p style={{ whiteSpace: 'pre-wrap' }}>
+                                {message?.message_text || ''}
+                              </p>
+                              <p>{formatDate(message?.created_at)}</p>
+                            </div>
+                          </div>
+
+                          <div className="video-meta">
+                            <span className={`admin-badge ${getStatusClass(message?.sender_role)}`}>
+                              {message?.sender_role || 'viewer'}
+                            </span>
+                            <span>{Number(message?.is_read) === 1 ? 'Read' : 'Unread'}</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <form className="admin-form" onSubmit={handleSendSupportReply} style={{ marginTop: 16 }}>
+                  <textarea
+                    className="admin-input admin-textarea"
+                    placeholder="Write your reply..."
+                    value={supportReplyMessage}
+                    onChange={(e) => setSupportReplyMessage(e.target.value)}
+                    rows={4}
+                  />
+
+                  <div className="admin-actions">
+                    <button
+                      type="submit"
+                      className="admin-btn success"
+                      disabled={supportSending}
+                    >
+                      {supportSending ? 'Sending...' : 'Send Reply'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderTabContent() {
     switch (activeTab) {
       case 'overview':
@@ -1926,6 +2342,8 @@ Performance
         return renderPlans();
       case 'ads':
         return renderAds();
+      case 'support':
+        return renderSupport();
       default:
         return renderOverview();
     }
@@ -1973,6 +2391,9 @@ Performance
                 if (tab.key !== 'ads') {
                   setAdsStatusFilter('all');
                 }
+                if (tab.key !== 'support') {
+                  setSupportStatusFilter('all');
+                }
                 setActiveTab(tab.key);
               }}
             >
@@ -1981,7 +2402,16 @@ Performance
           ))}
         </nav>
 
-        <button className="admin-btn secondary admin-refresh-btn" onClick={loadAll}>
+        <button
+          className="admin-btn secondary admin-refresh-btn"
+          onClick={() => {
+            if (activeTab === 'support') {
+              loadSupportConversations(selectedSupportConversationId);
+              return;
+            }
+            loadAll();
+          }}
+        >
           Reload data
         </button>
 

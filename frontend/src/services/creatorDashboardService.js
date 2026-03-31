@@ -60,3 +60,35 @@ export async function getVideoAnalytics(videoId) {
     method: 'GET',
   });
 }
+
+export async function getMySupportConversations() {
+  return apiRequest('/support/conversations/me', {
+    method: 'GET',
+  });
+}
+
+export async function getMySupportConversation(conversationId) {
+  return apiRequest(`/support/conversations/${conversationId}`, {
+    method: 'GET',
+  });
+}
+
+export async function createSupportConversation(payload) {
+  return apiRequest('/support/conversations', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function sendSupportMessage(conversationId, payload) {
+  return apiRequest(`/support/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function markSupportConversationRead(conversationId) {
+  return apiRequest(`/support/conversations/${conversationId}/read`, {
+    method: 'PUT',
+  });
+}

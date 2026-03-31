@@ -115,6 +115,8 @@ function normalizeArrayPayload(payload) {
   if (Array.isArray(payload?.ad_campaigns)) return payload.ad_campaigns;
   if (Array.isArray(payload?.ad_videos)) return payload.ad_videos;
   if (Array.isArray(payload?.ads)) return payload.ads;
+  if (Array.isArray(payload?.conversations)) return payload.conversations;
+  if (Array.isArray(payload?.messages)) return payload.messages;
   return [];
 }
 
@@ -217,6 +219,78 @@ function normalizeChannel(channel, index = 0) {
     username: channel?.username || '',
     created_at: channel?.created_at || channel?.createdAt || '',
     raw: channel,
+  };
+}
+
+function normalizeSupportConversation(conversation, index = 0) {
+  return {
+    id: conversation?.id || `conversation-${index}`,
+    user_id: conversation?.user_id || '',
+    assigned_admin_id: conversation?.assigned_admin_id || '',
+    subject: conversation?.subject || `Conversation #${conversation?.id || index + 1}`,
+    status: conversation?.status || 'open',
+    last_message_at: conversation?.last_message_at || conversation?.updated_at || conversation?.created_at || '',
+    created_at: conversation?.created_at || '',
+    updated_at: conversation?.updated_at || '',
+    last_message_text: conversation?.last_message_text || '',
+    unread_count: Number(conversation?.unread_count || 0),
+    user_full_name:
+      conversation?.user_full_name ||
+      conversation?.user?.full_name ||
+      conversation?.full_name ||
+      '',
+    user_username:
+      conversation?.user_username ||
+      conversation?.user?.username ||
+      conversation?.username ||
+      '',
+    user_email:
+      conversation?.user_email ||
+      conversation?.user?.email ||
+      conversation?.email ||
+      '',
+    admin_full_name:
+      conversation?.admin_full_name ||
+      conversation?.admin?.full_name ||
+      '',
+    admin_username:
+      conversation?.admin_username ||
+      conversation?.admin?.username ||
+      '',
+    admin_email:
+      conversation?.admin_email ||
+      conversation?.admin?.email ||
+      '',
+    raw: conversation,
+  };
+}
+
+function normalizeSupportMessage(message, index = 0) {
+  return {
+    id: message?.id || `message-${index}`,
+    conversation_id: message?.conversation_id || '',
+    sender_user_id: message?.sender_user_id || '',
+    sender_role: message?.sender_role || 'viewer',
+    message_text: message?.message_text || '',
+    is_read: Number(message?.is_read || 0),
+    created_at: message?.created_at || '',
+    full_name: message?.full_name || '',
+    username: message?.username || '',
+    email: message?.email || '',
+    raw: message,
+  };
+}
+
+function normalizeSupportConversationDetail(payload) {
+  const conversation = payload?.conversation || payload?.data?.conversation || null;
+  const messages = payload?.messages || payload?.data?.messages || [];
+
+  return {
+    conversation: conversation ? normalizeSupportConversation(conversation, 0) : null,
+    messages: Array.isArray(messages)
+      ? messages.map((message, index) => normalizeSupportMessage(message, index))
+      : [],
+    raw: payload,
   };
 }
 
@@ -492,6 +566,52 @@ const adminService = {
     return await request('/api/ads/skips', {
       method: 'POST',
       body: JSON.stringify(payload || {}),
+    });
+  },
+
+  async getSupportConversations(params = {}) {
+    const searchParams = new URLSearchParams();
+
+    if (params.status) {
+      searchParams.set('status', params.status);
+    }
+
+    if (params.search) {
+      searchParams.set('search', params.search);
+    }
+
+    const query = searchParams.toString();
+    const path = query
+      ? `/api/support/admin/conversations?${query}`
+      : '/api/support/admin/conversations';
+
+    const payload = await safeRequest(path, { method: 'GET' }, []);
+    return normalizeArrayPayload(payload).map((conversation, index) =>
+      normalizeSupportConversation(conversation, index)
+    );
+  },
+
+  async getSupportConversationById(conversationId) {
+    const payload = await request(`/api/support/admin/conversations/${conversationId}`, {
+      method: 'GET',
+    });
+
+    return normalizeSupportConversationDetail(payload);
+  },
+
+  async sendSupportReply(conversationId, payload) {
+    const response = await request(`/api/support/admin/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+
+    return normalizeSupportConversationDetail(response);
+  },
+
+  async updateSupportConversationStatus(conversationId, status) {
+    return await request(`/api/support/admin/conversations/${conversationId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
     });
   },
 };

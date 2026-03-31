@@ -34,6 +34,7 @@ const adClickRoutes = require('./routes/adClickRoutes');
 const adReportRoutes = require('./routes/adReportRoutes');
 const adSkipRoutes = require('./routes/adSkipRoutes');
 const walletRoutes = require('./routes/walletRoutes');
+const supportRoutes = require('./routes/supportRoutes');
 
 const { protect, protectOptional } = require('./middleware/authMiddleware');
 const { recordProductClick } = require('./controllers/productClickController');
@@ -164,6 +165,7 @@ app.use('/api', publicWatchRoutes);
 app.use('/api', marketplaceAuthRoutes);
 app.use('/api', categoryRoutes);
 app.use('/api', walletRoutes);
+app.use('/api', supportRoutes);
 
 app.use('/api/ads', adRoutes);
 app.use('/api/ads', adVideoRoutes);

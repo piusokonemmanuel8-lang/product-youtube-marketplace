@@ -301,6 +301,7 @@ function CreatorDashboardPage() {
           <a href="/upload-video">Upload Video</a>
           <a href="/my-videos">My Videos</a>
           <a href="/creator-analytics">Analytics</a>
+          <a href="/creator-support">Support Chat</a>
           <a href="/creator-ads">Ads</a>
           <a href="/creator-ads-analytics">Ads Analytics</a>
           <a href="/creator-wallet">Wallet</a>
@@ -363,6 +364,7 @@ function CreatorDashboardPage() {
                 {isLight ? 'Dark Mode' : 'Light Mode'}
               </button>
               <a href="/upload-video" className="primary-btn">Upload Video</a>
+              <a href="/creator-support" className="ghost-btn">Support Chat</a>
               <a href="/creator-subscription" className="ghost-btn">Subscription</a>
               <a href="/creator-ads" className="ghost-btn">Manage Ads</a>
               <a href="/creator-ads-analytics" className="ghost-btn">Ads Analytics</a>
@@ -436,6 +438,11 @@ function CreatorDashboardPage() {
               <a href="/upload-video" className="quick-action-card quick-action-link">
                 <h4>Upload Video</h4>
                 <p>Add a new product video for viewers to watch and buy.</p>
+              </a>
+
+              <a href="/creator-support" className="quick-action-card quick-action-link">
+                <h4>Support Chat</h4>
+                <p>Chat with admin for help, questions and marketplace support.</p>
               </a>
 
               <a href="/create-channel" className="quick-action-card quick-action-link">
