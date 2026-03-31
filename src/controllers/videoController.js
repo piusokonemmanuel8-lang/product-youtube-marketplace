@@ -158,6 +158,30 @@ async function getCreatorProfileByUserId(userId) {
   return creatorProfiles[0];
 }
 
+async function isCreatorMonetized(creatorId) {
+  const [rows] = await pool.query(
+    `SELECT
+       cp.monetization_status,
+       cms.is_monetized
+     FROM creator_profiles cp
+     LEFT JOIN creator_monetization_status cms ON cms.creator_id = cp.id
+     WHERE cp.id = ?
+     LIMIT 1`,
+    [creatorId]
+  );
+
+  if (!rows.length) {
+    return false;
+  }
+
+  const row = rows[0];
+
+  return (
+    Number(row.is_monetized || 0) === 1 ||
+    String(row.monetization_status || '').toLowerCase() === 'approved'
+  );
+}
+
 async function getMarketplaceAuthByCreatorId(creatorId) {
   const [rows] = await pool.query(
     'SELECT * FROM creator_marketplace_auth WHERE creator_id = ? LIMIT 1',
@@ -215,12 +239,14 @@ async function validateExternalPlanAccess(creatorId) {
 
   if (
     Number(activeSubscription.video_limit_per_month) > 0 &&
-    Number(activeSubscription.videos_used_this_cycle) >= Number(activeSubscription.video_limit_per_month)
+    Number(activeSubscription.videos_used_this_cycle) >=
+      Number(activeSubscription.video_limit_per_month)
   ) {
     return {
       allowed: false,
       statusCode: 402,
-      message: 'You have reached your plan limit. Upgrade your subscription to upload more videos.',
+      message:
+        'You have reached your plan limit. Upgrade your subscription to upload more videos.',
     };
   }
 
@@ -264,14 +290,6 @@ function canPostBuyNowLink(marketplaceAuth, buyNowUrl) {
   }
 
   if (String(marketplaceAuth.auth_type || '').toLowerCase() !== 'external') {
-    return {
-      allowed: false,
-      statusCode: 402,
-      message: 'Subscribe to a plan to post external product links.',
-    };
-  }
-
-  if (Number(marketplaceAuth.payment_required) === 1) {
     return {
       allowed: false,
       statusCode: 402,
@@ -437,6 +455,12 @@ async function createVideo(req, res) {
       });
     }
 
+    const creatorCanChooseVideoMonetization = await isCreatorMonetized(
+      creatorProfile.id
+    );
+    const finalIsMonetized =
+      creatorCanChooseVideoMonetization && Number(is_monetized || 0) === 1 ? 1 : 0;
+
     const [channels] = await pool.query(
       'SELECT * FROM channels WHERE id = ? AND creator_id = ? LIMIT 1',
       [channel_id, creatorProfile.id]
@@ -472,9 +496,7 @@ async function createVideo(req, res) {
     }
 
     const usesExternalLink =
-      buy_now_enabled == 1 &&
-      cleanBuyNowUrl &&
-      !isSupgadUrl(cleanBuyNowUrl);
+      buy_now_enabled == 1 && cleanBuyNowUrl && !isSupgadUrl(cleanBuyNowUrl);
 
     let externalPlanSubscription = null;
 
@@ -549,7 +571,7 @@ async function createVideo(req, res) {
         cleanBuyNowUrl !== undefined ? cleanBuyNowUrl : null,
         usesExternalLink ? 1 : 0,
         usesExternalLink ? 1 : 0,
-        is_monetized !== undefined ? is_monetized : 0,
+        finalIsMonetized,
       ]
     );
 
@@ -678,7 +700,8 @@ async function getPublicVideos(req, res) {
     const params = [];
 
     if (videoFormat === 'short' || videoFormat === 'regular') {
-      sql += ' AND COALESCE(v.video_format, CASE WHEN COALESCE(v.duration_seconds, 0) <= 60 AND COALESCE(v.duration_seconds, 0) > 0 THEN \'short\' ELSE \'regular\' END) = ?';
+      sql +=
+        " AND COALESCE(v.video_format, CASE WHEN COALESCE(v.duration_seconds, 0) <= 60 AND COALESCE(v.duration_seconds, 0) > 0 THEN 'short' ELSE 'regular' END) = ?";
       params.push(videoFormat);
     }
 
@@ -691,52 +714,56 @@ async function getPublicVideos(req, res) {
     const [videos] = await pool.query(sql, params);
 
     return res.status(200).json({
-      videos: videos.map((video) => normalizeVideoRow({
-        id: video.id,
-        uuid: video.uuid,
-        creator_id: video.creator_id,
-        channel_id: video.channel_id,
-        category_id: video.category_id,
-        title: video.title,
-        slug: video.slug,
-        description: video.description,
-        video_type: video.video_type,
-        video_format: video.video_format,
-        source_type: video.source_type,
-        storage_provider: video.storage_provider,
-        video_key: video.video_key,
-        stream_key: video.stream_key,
-        thumbnail_key: video.thumbnail_key,
-        short_thumbnail_key: video.short_thumbnail_key,
-        preview_key: video.preview_key,
-        duration_seconds: video.duration_seconds,
-        visibility: video.visibility,
-        status: video.status,
-        moderation_status: video.moderation_status,
-        comments_enabled: video.comments_enabled,
-        buy_now_enabled: video.buy_now_enabled,
-        buy_now_url: video.buy_now_url,
-        uses_external_link: Number(video.uses_external_link || 0),
-        external_link_subscription_required: Number(video.external_link_subscription_required || 0),
-        subscription_unpublished_at: video.subscription_unpublished_at,
-        subscription_republished_at: video.subscription_republished_at,
-        is_monetized: video.is_monetized,
-        published_at: video.published_at,
-        created_at: video.created_at,
-        updated_at: video.updated_at,
-        channel_name: video.channel_name,
-        channel_handle: video.channel_handle,
-        channel_slug: video.channel_slug,
-        video_url: buildMediaUrl(video.video_key),
-        thumbnail_url: buildMediaUrl(video.thumbnail_key),
-        short_thumbnail_url:
-          buildMediaUrl(video.short_thumbnail_key) ||
-          buildMediaUrl(video.thumbnail_key),
-        preview_url: buildMediaUrl(video.preview_key),
-        views_count: Number(video.views_count || 0),
-        total_views: Number(video.views_count || 0),
-        views: Number(video.views_count || 0),
-      })),
+      videos: videos.map((video) =>
+        normalizeVideoRow({
+          id: video.id,
+          uuid: video.uuid,
+          creator_id: video.creator_id,
+          channel_id: video.channel_id,
+          category_id: video.category_id,
+          title: video.title,
+          slug: video.slug,
+          description: video.description,
+          video_type: video.video_type,
+          video_format: video.video_format,
+          source_type: video.source_type,
+          storage_provider: video.storage_provider,
+          video_key: video.video_key,
+          stream_key: video.stream_key,
+          thumbnail_key: video.thumbnail_key,
+          short_thumbnail_key: video.short_thumbnail_key,
+          preview_key: video.preview_key,
+          duration_seconds: video.duration_seconds,
+          visibility: video.visibility,
+          status: video.status,
+          moderation_status: video.moderation_status,
+          comments_enabled: video.comments_enabled,
+          buy_now_enabled: video.buy_now_enabled,
+          buy_now_url: video.buy_now_url,
+          uses_external_link: Number(video.uses_external_link || 0),
+          external_link_subscription_required: Number(
+            video.external_link_subscription_required || 0
+          ),
+          subscription_unpublished_at: video.subscription_unpublished_at,
+          subscription_republished_at: video.subscription_republished_at,
+          is_monetized: video.is_monetized,
+          published_at: video.published_at,
+          created_at: video.created_at,
+          updated_at: video.updated_at,
+          channel_name: video.channel_name,
+          channel_handle: video.channel_handle,
+          channel_slug: video.channel_slug,
+          video_url: buildMediaUrl(video.video_key),
+          thumbnail_url: buildMediaUrl(video.thumbnail_key),
+          short_thumbnail_url:
+            buildMediaUrl(video.short_thumbnail_key) ||
+            buildMediaUrl(video.thumbnail_key),
+          preview_url: buildMediaUrl(video.preview_key),
+          views_count: Number(video.views_count || 0),
+          total_views: Number(video.views_count || 0),
+          views: Number(video.views_count || 0),
+        })
+      ),
     });
   } catch (error) {
     return res.status(500).json({
@@ -781,7 +808,8 @@ async function getAdminVideos(req, res) {
     }
 
     if (videoFormat === 'short' || videoFormat === 'regular') {
-      sql += ' AND COALESCE(v.video_format, CASE WHEN COALESCE(v.duration_seconds, 0) <= 60 AND COALESCE(v.duration_seconds, 0) > 0 THEN \'short\' ELSE \'regular\' END) = ?';
+      sql +=
+        " AND COALESCE(v.video_format, CASE WHEN COALESCE(v.duration_seconds, 0) <= 60 AND COALESCE(v.duration_seconds, 0) > 0 THEN 'short' ELSE 'regular' END) = ?";
       params.push(videoFormat);
     }
 
@@ -841,7 +869,8 @@ async function getAdminVideoById(req, res) {
 async function updateAdminVideoStatus(req, res) {
   try {
     const { id } = req.params;
-    const { status, moderation_status, visibility, published_at, reviewer_note } = req.body;
+    const { status, moderation_status, visibility, published_at, reviewer_note } =
+      req.body;
 
     const [videos] = await pool.query(
       'SELECT * FROM videos WHERE id = ? LIMIT 1',
@@ -881,7 +910,10 @@ async function updateAdminVideoStatus(req, res) {
       ]
     );
 
-    if (finalModerationStatus === 'approved' || finalModerationStatus === 'rejected') {
+    if (
+      finalModerationStatus === 'approved' ||
+      finalModerationStatus === 'rejected'
+    ) {
       await pool.query(
         `UPDATE moderation_queue
          SET moderation_status = ?,
@@ -890,12 +922,7 @@ async function updateAdminVideoStatus(req, res) {
              reviewed_by = ?
          WHERE video_id = ?
            AND moderation_status = 'pending'`,
-        [
-          finalModerationStatus,
-          reviewer_note || null,
-          req.user.id,
-          currentVideo.id,
-        ]
+        [finalModerationStatus, reviewer_note || null, req.user.id, currentVideo.id]
       );
     }
 
@@ -1065,9 +1092,7 @@ async function updateMyVideo(req, res) {
       !isSupgadUrl(currentVideo.buy_now_url);
 
     const finalVideoUsesExternalLink =
-      finalBuyNowEnabled == 1 &&
-      finalBuyNowUrl &&
-      !isSupgadUrl(finalBuyNowUrl);
+      finalBuyNowEnabled == 1 && finalBuyNowUrl && !isSupgadUrl(finalBuyNowUrl);
 
     let externalPlanSubscription = null;
 
@@ -1100,6 +1125,15 @@ async function updateMyVideo(req, res) {
         message: 'Short thumbnail is required',
       });
     }
+
+    const creatorCanChooseVideoMonetization = await isCreatorMonetized(
+      creatorProfile.id
+    );
+    const finalIsMonetized = creatorCanChooseVideoMonetization
+      ? is_monetized !== undefined
+        ? Number(is_monetized)
+        : Number(currentVideo.is_monetized || 0)
+      : 0;
 
     await pool.query(
       `UPDATE videos
@@ -1153,14 +1187,15 @@ async function updateMyVideo(req, res) {
         finalBuyNowUrl,
         finalVideoUsesExternalLink ? 1 : 0,
         finalVideoUsesExternalLink ? 1 : 0,
-        is_monetized !== undefined ? is_monetized : currentVideo.is_monetized,
+        finalIsMonetized,
         published_at !== undefined ? published_at : currentVideo.published_at,
         currentVideo.id,
       ]
     );
 
     const finalStatusValue = status || currentVideo.status;
-    const finalModerationStatusValue = moderation_status || currentVideo.moderation_status;
+    const finalModerationStatusValue =
+      moderation_status || currentVideo.moderation_status;
 
     const shouldReturnToQueue =
       finalStatusValue === 'draft' && finalModerationStatusValue === 'pending';

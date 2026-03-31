@@ -1,10 +1,8 @@
 const pool = require('../config/db');
 
-// TEMP TEST THRESHOLDS
-// IMPORTANT: set these back after testing monetization flow
-const SUBSCRIBER_THRESHOLD = 1;
-const TOTAL_VIDEO_VIEWS_THRESHOLD = 5;
-const WATCH_HOURS_THRESHOLD = 0;
+const SUBSCRIBER_THRESHOLD = 1000;
+const TOTAL_VIDEO_VIEWS_THRESHOLD = 10000;
+const WATCH_HOURS_THRESHOLD = 500;
 
 const CREATOR_SHARE_PERCENT = 55;
 const PLATFORM_SHARE_PERCENT = 45;
@@ -36,7 +34,10 @@ function calculateRevenueSplit(grossRevenue) {
 
 async function getCreatorProfileByUserId(userId) {
   const [rows] = await pool.query(
-    `SELECT * FROM creator_profiles WHERE user_id = ? LIMIT 1`,
+    `SELECT *
+     FROM creator_profiles
+     WHERE user_id = ?
+     LIMIT 1`,
     [userId]
   );
 
@@ -45,7 +46,9 @@ async function getCreatorProfileByUserId(userId) {
 
 async function getCreatorTotals(creatorId) {
   const [channelIdsRows] = await pool.query(
-    `SELECT id FROM channels WHERE creator_id = ?`,
+    `SELECT id
+     FROM channels
+     WHERE creator_id = ?`,
     [creatorId]
   );
 
@@ -65,7 +68,8 @@ async function getCreatorTotals(creatorId) {
     totalSubscribers = Number(subscriptionRows[0]?.total_subscribers || 0);
 
     const [channelAnalyticsRows] = await pool.query(
-      `SELECT COALESCE(SUM(watch_time_seconds), 0) AS total_watch_time_seconds
+      `SELECT
+          COALESCE(SUM(watch_time_seconds), 0) AS total_watch_time_seconds
        FROM channel_analytics_daily
        WHERE channel_id IN (?)`,
       [channelIds]
@@ -100,7 +104,8 @@ async function getCreatorTotals(creatorId) {
 
 async function getExternalSubscriptionState(creatorId) {
   const [rows] = await pool.query(
-    `SELECT * FROM creator_plan_subscriptions
+    `SELECT *
+     FROM creator_plan_subscriptions
      WHERE creator_id = ?
      ORDER BY id DESC
      LIMIT 1`,
@@ -127,8 +132,7 @@ async function getExternalSubscriptionState(creatorId) {
 
 function buildEligibility(totals, externalState) {
   const checks = {
-    subscribers_met:
-      Number(totals.total_subscribers || 0) >= SUBSCRIBER_THRESHOLD,
+    subscribers_met: Number(totals.total_subscribers || 0) >= SUBSCRIBER_THRESHOLD,
     total_video_views_met:
       Number(totals.total_video_views || 0) >= TOTAL_VIDEO_VIEWS_THRESHOLD,
     watch_hours_met:
@@ -161,7 +165,8 @@ function buildEligibility(totals, externalState) {
 
 async function getLatestApplicationByCreatorId(creatorId) {
   const [rows] = await pool.query(
-    `SELECT * FROM creator_monetization_applications
+    `SELECT *
+     FROM creator_monetization_applications
      WHERE creator_id = ?
      ORDER BY id DESC
      LIMIT 1`,
@@ -173,7 +178,8 @@ async function getLatestApplicationByCreatorId(creatorId) {
 
 async function ensureMonetizationStatusRow(creatorId) {
   const [rows] = await pool.query(
-    `SELECT * FROM creator_monetization_status
+    `SELECT *
+     FROM creator_monetization_status
      WHERE creator_id = ?
      LIMIT 1`,
     [creatorId]
@@ -184,13 +190,15 @@ async function ensureMonetizationStatusRow(creatorId) {
   }
 
   await pool.query(
-    `INSERT INTO creator_monetization_status (creator_id, is_monetized)
+    `INSERT INTO creator_monetization_status
+     (creator_id, is_monetized)
      VALUES (?, 0)`,
     [creatorId]
   );
 
   const [createdRows] = await pool.query(
-    `SELECT * FROM creator_monetization_status
+    `SELECT *
+     FROM creator_monetization_status
      WHERE creator_id = ?
      LIMIT 1`,
     [creatorId]
@@ -299,17 +307,19 @@ async function applyForMonetization(req, res) {
     }
 
     const [insertResult] = await pool.query(
-      `INSERT INTO creator_monetization_applications (
-        creator_id,
-        user_id,
-        status,
-        subscriber_count,
-        total_video_views,
-        total_watch_time_seconds,
-        total_watch_hours,
-        has_active_external_subscription,
-        applied_message
-      ) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO creator_monetization_applications
+       (
+         creator_id,
+         user_id,
+         status,
+         subscriber_count,
+         total_video_views,
+         total_watch_time_seconds,
+         total_watch_hours,
+         has_active_external_subscription,
+         applied_message
+       )
+       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
       [
         creatorProfile.id,
         userId,
@@ -336,7 +346,8 @@ async function applyForMonetization(req, res) {
     );
 
     const [rows] = await pool.query(
-      `SELECT * FROM creator_monetization_applications
+      `SELECT *
+       FROM creator_monetization_applications
        WHERE id = ?
        LIMIT 1`,
       [insertResult.insertId]
@@ -359,6 +370,7 @@ async function applyForMonetization(req, res) {
 async function getAdminMonetizationApplications(req, res) {
   try {
     const status = String(req.query?.status || '').trim().toLowerCase();
+
     const params = [];
     let whereSql = '';
 
@@ -368,7 +380,11 @@ async function getAdminMonetizationApplications(req, res) {
     }
 
     const [rows] = await pool.query(
-      `SELECT cma.*, cp.public_name, u.full_name, u.email
+      `SELECT
+         cma.*,
+         cp.public_name,
+         u.full_name,
+         u.email
        FROM creator_monetization_applications cma
        INNER JOIN creator_profiles cp ON cp.id = cma.creator_id
        INNER JOIN users u ON u.id = cma.user_id
@@ -394,7 +410,11 @@ async function getAdminMonetizationApplicationById(req, res) {
     const { applicationId } = req.params;
 
     const [rows] = await pool.query(
-      `SELECT cma.*, cp.public_name, u.full_name, u.email
+      `SELECT
+         cma.*,
+         cp.public_name,
+         u.full_name,
+         u.email
        FROM creator_monetization_applications cma
        INNER JOIN creator_profiles cp ON cp.id = cma.creator_id
        INNER JOIN users u ON u.id = cma.user_id
@@ -435,7 +455,8 @@ async function updateMonetizationApplicationStatus(req, res) {
     }
 
     const [rows] = await pool.query(
-      `SELECT * FROM creator_monetization_applications
+      `SELECT *
+       FROM creator_monetization_applications
        WHERE id = ?
        LIMIT 1`,
       [applicationId]
@@ -448,7 +469,6 @@ async function updateMonetizationApplicationStatus(req, res) {
     }
 
     const application = rows[0];
-
     await ensureMonetizationStatusRow(application.creator_id);
 
     if (status === 'approved') {
@@ -533,7 +553,8 @@ async function updateMonetizationApplicationStatus(req, res) {
     }
 
     const [updatedRows] = await pool.query(
-      `SELECT * FROM creator_monetization_applications
+      `SELECT *
+       FROM creator_monetization_applications
        WHERE id = ?
        LIMIT 1`,
       [applicationId]
