@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
 
 import HomePage from './pages/HomePage';
@@ -23,14 +23,117 @@ import CreatorSupportPage from './pages/CreatorSupportPage';
 import CreatorMonetizationPage from './pages/CreatorMonetizationPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import AdminLoginPage from './pages/AdminLoginPage';
+import { getCreatorMonetizationEligibility } from './services/creatorDashboardService';
+
+function getCurrentPath() {
+  const rawPath = window.location.pathname || '/';
+  return rawPath.replace(/\/+$/, '') || '/';
+}
+
+function extractEligibilitySource(payload) {
+  if (payload?.data && typeof payload.data === 'object') return payload.data;
+  return payload || {};
+}
+
+function isCreatorMonetized(payload) {
+  const source = extractEligibilitySource(payload);
+
+  const monetizationStatus = source?.monetization_status || {};
+  const creatorProfile = source?.creator_profile || {};
+  const latestApplication = source?.latest_application || {};
+
+  return (
+    monetizationStatus?.is_monetized === true ||
+    monetizationStatus?.is_monetized === 1 ||
+    creatorProfile?.is_monetized === true ||
+    creatorProfile?.is_monetized === 1 ||
+    String(monetizationStatus?.status || '').toLowerCase() === 'approved' ||
+    String(monetizationStatus?.status || '').toLowerCase() === 'monetized' ||
+    String(creatorProfile?.monetization_status || '').toLowerCase() === 'approved' ||
+    String(creatorProfile?.monetization_status || '').toLowerCase() === 'monetized' ||
+    String(latestApplication?.status || '').toLowerCase() === 'approved'
+  );
+}
+
+function MonetizationLockedPage({ featureTitle = 'This page' }) {
+  return (
+    <div className="monetization-lock-page">
+      <div className="monetization-lock-card">
+        <div className="monetization-lock-badge">Creator Access</div>
+        <h1>{featureTitle} is for monetized creators</h1>
+        <p>
+          Unfortunately, your account is not monetized yet. Check your current level
+          status and eligibility to unlock this page.
+        </p>
+
+        <div className="monetization-lock-actions">
+          <a href="/creator-monetization" className="primary-btn">
+            Check Current Level Status
+          </a>
+          <a href="/creator-dashboard" className="ghost-btn">
+            Back to Dashboard
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MonetizedOnlyRoute({ children, featureTitle }) {
+  const [loading, setLoading] = useState(true);
+  const [isAllowed, setIsAllowed] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkAccess() {
+      setLoading(true);
+
+      try {
+        const response = await getCreatorMonetizationEligibility();
+        if (!mounted) return;
+        setIsAllowed(isCreatorMonetized(response));
+      } catch (error) {
+        if (!mounted) return;
+        setIsAllowed(false);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    checkAccess();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const content = useMemo(() => {
+    if (loading) {
+      return (
+        <div className="monetization-lock-page">
+          <div className="monetization-lock-card">
+            <div className="monetization-lock-badge">Checking Access</div>
+            <h1>Please wait</h1>
+            <p>We are checking your monetization status.</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!isAllowed) {
+      return <MonetizationLockedPage featureTitle={featureTitle} />;
+    }
+
+    return children;
+  }, [children, featureTitle, isAllowed, loading]);
+
+  return content;
+}
 
 function App() {
-  const getCurrentPath = () => {
-    const rawPath = window.location.pathname || '/';
-    const normalizedPath = rawPath.replace(/\/+$/, '') || '/';
-    return normalizedPath;
-  };
-
   const [path, setPath] = useState(getCurrentPath());
 
   useEffect(() => {
@@ -121,11 +224,19 @@ function App() {
   }
 
   if (path === '/creator-earnings') {
-    return <CreatorEarningsPage />;
+    return (
+      <MonetizedOnlyRoute featureTitle="Earnings">
+        <CreatorEarningsPage />
+      </MonetizedOnlyRoute>
+    );
   }
 
   if (path === '/creator-payout') {
-    return <CreatorPayoutPage />;
+    return (
+      <MonetizedOnlyRoute featureTitle="Payout">
+        <CreatorPayoutPage />
+      </MonetizedOnlyRoute>
+    );
   }
 
   if (path === '/login') {

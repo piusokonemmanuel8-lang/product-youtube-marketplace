@@ -204,6 +204,102 @@ async function debitWalletForAdSpend({
   }
 }
 
+async function creditCreatorMonetizationEarning({
+  creatorUserId,
+  amount,
+  reference,
+  description,
+  metadata = {},
+}) {
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const wallet = await getOrCreateWallet(creatorUserId, connection);
+
+    const [lockedWalletRows] = await connection.query(
+      'SELECT * FROM creator_wallets WHERE id = ? LIMIT 1 FOR UPDATE',
+      [wallet.id]
+    );
+
+    if (!lockedWalletRows.length) {
+      throw new Error('Wallet not found');
+    }
+
+    const lockedWallet = lockedWalletRows[0];
+    const creditAmount = roundMoney(amount);
+
+    if (creditAmount <= 0) {
+      throw new Error('Invalid credit amount');
+    }
+
+    const balanceBefore = roundMoney(lockedWallet.balance);
+    const balanceAfter = roundMoney(balanceBefore + creditAmount);
+
+    await connection.query(
+      `UPDATE creator_wallets
+       SET balance = ?
+       WHERE id = ?`,
+      [balanceAfter, lockedWallet.id]
+    );
+
+    await connection.query(
+      `INSERT INTO creator_wallet_transactions
+      (
+        wallet_id,
+        creator_user_id,
+        type,
+        direction,
+        amount,
+        balance_before,
+        balance_after,
+        reference,
+        description,
+        metadata_json
+      )
+      VALUES (?, ?, 'monetization_earning', 'credit', ?, ?, ?, ?, ?, ?)`,
+      [
+        lockedWallet.id,
+        creatorUserId,
+        creditAmount,
+        balanceBefore,
+        balanceAfter,
+        reference || `earning_${crypto.randomUUID()}`,
+        description || 'Creator monetization earning',
+        JSON.stringify(metadata || {}),
+      ]
+    );
+
+    await connection.query(
+      `UPDATE creator_profiles
+       SET available_balance = COALESCE(available_balance, 0) + ?
+       WHERE user_id = ?`,
+      [creditAmount, creatorUserId]
+    );
+
+    await connection.commit();
+
+    const [updatedWalletRows] = await pool.query(
+      'SELECT * FROM creator_wallets WHERE id = ? LIMIT 1',
+      [lockedWallet.id]
+    );
+
+    return {
+      success: true,
+      wallet: updatedWalletRows[0],
+      balance_before: balanceBefore,
+      balance_after: balanceAfter,
+      amount: creditAmount,
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 async function getMyWallet(req, res) {
   try {
     const creatorUserId = Number(req.user?.id || 0);
@@ -248,7 +344,8 @@ async function getMyWallet(req, res) {
       filters: {
         from_date: range.from_date_display,
         to_date: range.to_date_display,
-        default_range: !req.query?.from_date && !req.query?.to_date ? 'last_7_days' : 'custom',
+        default_range:
+          !req.query?.from_date && !req.query?.to_date ? 'last_7_days' : 'custom',
       },
       transaction_count: normalizedTransactions.length,
     });
@@ -440,6 +537,7 @@ async function deleteMyWalletTransaction(req, res) {
 module.exports = {
   getOrCreateWallet,
   debitWalletForAdSpend,
+  creditCreatorMonetizationEarning,
   getMyWallet,
   getMyWalletTransactionById,
   topUpMyWallet,

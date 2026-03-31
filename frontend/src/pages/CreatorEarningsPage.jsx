@@ -1,8 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  getCreatorPayoutRequests,
-  getCreatorPayoutTransactions,
-} from '../services/creatorEarningsService';
+import { getCreatorEarningsDashboard } from '../services/creatorEarningsService';
 import './CreatorEarningsPage.css';
 
 const MIN_WITHDRAWAL_AMOUNT = 20;
@@ -10,10 +7,10 @@ const MIN_WITHDRAWAL_AMOUNT = 20;
 function normalizeArrayResponse(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.earnings)) return data.earnings;
+  if (Array.isArray(data?.payout_requests)) return data.payout_requests;
   if (Array.isArray(data?.transactions)) return data.transactions;
-  if (Array.isArray(data?.payouts)) return data.payouts;
   if (Array.isArray(data?.requests)) return data.requests;
-  if (Array.isArray(data?.payoutRequests)) return data.payoutRequests;
   return [];
 }
 
@@ -43,27 +40,6 @@ function formatDate(value) {
     month: 'short',
     day: 'numeric',
   });
-}
-
-function isWithinRange(dateValue, fromDate, toDate) {
-  if (!dateValue) return false;
-
-  const itemDate = new Date(dateValue);
-  if (Number.isNaN(itemDate.getTime())) return false;
-
-  if (fromDate) {
-    const from = new Date(fromDate);
-    from.setHours(0, 0, 0, 0);
-    if (itemDate < from) return false;
-  }
-
-  if (toDate) {
-    const to = new Date(toDate);
-    to.setHours(23, 59, 59, 999);
-    if (itemDate > to) return false;
-  }
-
-  return true;
 }
 
 function getQuickRangeDates(rangeKey) {
@@ -98,7 +74,7 @@ function buildMonthlyChartData(items) {
   const bucket = new Map();
 
   items.forEach((item) => {
-    const rawDate = item.date || item.created_at;
+    const rawDate = item.created_at || item.date;
     const parsed = new Date(rawDate);
     if (Number.isNaN(parsed.getTime())) return;
 
@@ -116,8 +92,16 @@ function buildMonthlyChartData(items) {
 }
 
 function CreatorEarningsPage() {
-  const [transactions, setTransactions] = useState([]);
+  const [earnings, setEarnings] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [summary, setSummary] = useState({
+    total_earned: 0,
+    available_to_withdraw: 0,
+    payout_requests_count: 0,
+    paid_out: 0,
+    minimum_withdrawal_amount: MIN_WITHDRAWAL_AMOUNT,
+    withdraw_locked: true,
+  });
   const [loading, setLoading] = useState(true);
   const [pageMessage, setPageMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -140,23 +124,47 @@ function CreatorEarningsPage() {
       setPageMessage('');
 
       try {
-        const [transactionsResponse, requestsResponse] = await Promise.all([
-          getCreatorPayoutTransactions().catch(() => null),
-          getCreatorPayoutRequests().catch(() => null),
-        ]);
+        const response = await getCreatorEarningsDashboard({
+          status: statusFilter,
+          type: typeFilter,
+          from_date: fromDate,
+          to_date: toDate,
+        });
 
-        const tx = normalizeArrayResponse(transactionsResponse);
-        const rq = normalizeArrayResponse(requestsResponse);
+        const earningRows = normalizeArrayResponse(response?.earnings || response);
+        const payoutRows = normalizeArrayResponse(response?.payout_requests || []);
+        const backendSummary = response?.summary || {};
 
-        setTransactions(tx);
-        setRequests(rq);
+        setEarnings(earningRows);
+        setRequests(payoutRows);
+        setSummary({
+          total_earned: parseAmount(backendSummary.total_earned),
+          available_to_withdraw: parseAmount(backendSummary.available_to_withdraw),
+          payout_requests_count: Number(backendSummary.payout_requests_count || 0),
+          paid_out: parseAmount(backendSummary.paid_out),
+          minimum_withdrawal_amount: parseAmount(
+            backendSummary.minimum_withdrawal_amount || MIN_WITHDRAWAL_AMOUNT
+          ),
+          withdraw_locked:
+            backendSummary.withdraw_locked !== undefined
+              ? Boolean(backendSummary.withdraw_locked)
+              : parseAmount(backendSummary.available_to_withdraw) < MIN_WITHDRAWAL_AMOUNT,
+        });
 
-        if (!tx.length && !rq.length) {
+        if (!earningRows.length && !payoutRows.length) {
           setPageMessage('No earnings records available yet.');
         }
       } catch (error) {
-        setTransactions([]);
+        setEarnings([]);
         setRequests([]);
+        setSummary({
+          total_earned: 0,
+          available_to_withdraw: 0,
+          payout_requests_count: 0,
+          paid_out: 0,
+          minimum_withdrawal_amount: MIN_WITHDRAWAL_AMOUNT,
+          withdraw_locked: true,
+        });
         setErrorMessage(error.message || 'Failed to load earnings data.');
       } finally {
         setLoading(false);
@@ -164,7 +172,7 @@ function CreatorEarningsPage() {
     }
 
     loadEarnings();
-  }, []);
+  }, [statusFilter, typeFilter, fromDate, toDate]);
 
   function applyQuickRange(rangeKey) {
     setQuickRange(rangeKey);
@@ -173,80 +181,20 @@ function CreatorEarningsPage() {
     setToDate(preset.to);
   }
 
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter((item) => {
-      const itemStatus = String(item.status || '').toLowerCase();
-      const itemType = String(item.type || item.category || '').toLowerCase();
-      const itemDate = item.date || item.created_at;
-
-      const matchesStatus =
-        statusFilter === 'all' || itemStatus === statusFilter.toLowerCase();
-
-      const matchesType =
-        typeFilter === 'all' || itemType === typeFilter.toLowerCase();
-
-      const matchesDate =
-        !fromDate && !toDate ? true : isWithinRange(itemDate, fromDate, toDate);
-
-      return matchesStatus && matchesType && matchesDate;
-    });
-  }, [transactions, statusFilter, typeFilter, fromDate, toDate]);
-
-  const filteredRequests = useMemo(() => {
-    return requests.filter((item) => {
-      const itemDate = item.created_at || item.date;
-      return !fromDate && !toDate ? true : isWithinRange(itemDate, fromDate, toDate);
-    });
-  }, [requests, fromDate, toDate]);
-
-  const summary = useMemo(() => {
-    const completedEarnings = transactions
-      .filter((item) => String(item.status || '').toLowerCase() === 'completed')
-      .reduce((sum, item) => sum + parseAmount(item.amount || item.total), 0);
-
-    const reservedRequests = requests
-      .filter((item) => {
-        const status = String(item.status || '').toLowerCase();
-        return status === 'pending' || status === 'approved' || status === 'paid';
-      })
-      .reduce((sum, item) => sum + parseAmount(item.amount || item.total), 0);
-
-    const totalEarned = filteredTransactions.reduce(
-      (sum, item) => sum + parseAmount(item.amount || item.total),
-      0
-    );
-
-    const pendingAmount = filteredTransactions
-      .filter((item) => String(item.status || '').toLowerCase() === 'pending')
-      .reduce((sum, item) => sum + parseAmount(item.amount || item.total), 0);
-
-    const paidRequestAmount = filteredRequests
-      .filter((item) => String(item.status || '').toLowerCase() === 'paid')
-      .reduce((sum, item) => sum + parseAmount(item.amount || item.total), 0);
-
-    const availableToWithdraw = Math.max(completedEarnings - reservedRequests, 0);
-
-    return {
-      totalEarned,
-      totalRequests: filteredRequests.length,
-      pendingAmount,
-      paidRequestAmount,
-      completedTransactions: filteredTransactions.filter(
-        (item) => String(item.status || '').toLowerCase() === 'completed'
-      ).length,
-      availableToWithdraw,
-      canWithdraw: availableToWithdraw >= MIN_WITHDRAWAL_AMOUNT,
-    };
-  }, [filteredTransactions, filteredRequests, transactions, requests]);
-
   const chartData = useMemo(() => {
-    return buildMonthlyChartData(filteredTransactions);
-  }, [filteredTransactions]);
+    return buildMonthlyChartData(earnings);
+  }, [earnings]);
 
   const maxChartValue = useMemo(() => {
     const max = Math.max(...chartData.map((item) => item.total), 0);
     return max || 1;
   }, [chartData]);
+
+  const completedTransactions = useMemo(() => {
+    return earnings.filter(
+      (item) => String(item.status || '').toLowerCase() === 'completed'
+    ).length;
+  }, [earnings]);
 
   if (loading) {
     return (
@@ -279,14 +227,14 @@ function CreatorEarningsPage() {
           <div className="creator-earnings-header-actions">
             <a href="/creator-dashboard" className="ghost-btn">Dashboard</a>
             <a href="/creator-payout" className="ghost-btn">Payout Page</a>
-            {summary.canWithdraw ? (
-              <a href="/creator-payout" className="primary-btn">
-                Withdraw {formatMoney(summary.availableToWithdraw)}
-              </a>
-            ) : (
+            {summary.withdraw_locked ? (
               <button type="button" className="ghost-btn" disabled title="Minimum withdrawal is $20">
-                Withdraw locked under {formatMoney(MIN_WITHDRAWAL_AMOUNT)}
+                Withdraw locked under {formatMoney(summary.minimum_withdrawal_amount)}
               </button>
+            ) : (
+              <a href="/creator-payout" className="primary-btn">
+                Withdraw {formatMoney(summary.available_to_withdraw)}
+              </a>
             )}
           </div>
         </section>
@@ -301,6 +249,7 @@ function CreatorEarningsPage() {
                 <option value="pending">Pending</option>
                 <option value="approved">Approved</option>
                 <option value="paid">Paid</option>
+                <option value="rejected">Rejected</option>
               </select>
             </div>
 
@@ -308,9 +257,7 @@ function CreatorEarningsPage() {
               <label>Type</label>
               <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
                 <option value="all">All Types</option>
-                <option value="ad revenue">Ad Revenue</option>
-                <option value="revenue">Revenue</option>
-                <option value="referral">Referral</option>
+                <option value="monetization_earning">Monetization Earning</option>
               </select>
             </div>
 
@@ -385,25 +332,25 @@ function CreatorEarningsPage() {
         <section className="creator-earnings-stats">
           <div className="creator-earnings-stat-card">
             <p>Total Earned</p>
-            <h3>{formatMoney(summary.totalEarned)}</h3>
+            <h3>{formatMoney(summary.total_earned)}</h3>
             <span>Filtered earnings total</span>
           </div>
 
           <div className="creator-earnings-stat-card">
             <p>Available to Withdraw</p>
-            <h3>{formatMoney(summary.availableToWithdraw)}</h3>
-            <span>Minimum withdrawal is {formatMoney(MIN_WITHDRAWAL_AMOUNT)}</span>
+            <h3>{formatMoney(summary.available_to_withdraw)}</h3>
+            <span>Minimum withdrawal is {formatMoney(summary.minimum_withdrawal_amount)}</span>
           </div>
 
           <div className="creator-earnings-stat-card">
             <p>Payout Requests</p>
-            <h3>{summary.totalRequests}</h3>
+            <h3>{summary.payout_requests_count}</h3>
             <span>Requests in selected range</span>
           </div>
 
           <div className="creator-earnings-stat-card">
             <p>Paid Out</p>
-            <h3>{formatMoney(summary.paidRequestAmount)}</h3>
+            <h3>{formatMoney(summary.paid_out)}</h3>
             <span>Already sent out</span>
           </div>
         </section>
@@ -446,19 +393,19 @@ function CreatorEarningsPage() {
             <div className="creator-earnings-insights">
               <div className="creator-earnings-insight-row">
                 <span>Completed transactions</span>
-                <strong>{summary.completedTransactions}</strong>
+                <strong>{completedTransactions}</strong>
               </div>
               <div className="creator-earnings-insight-row">
                 <span>Filtered records</span>
-                <strong>{filteredTransactions.length}</strong>
+                <strong>{earnings.length}</strong>
               </div>
               <div className="creator-earnings-insight-row">
                 <span>Payout requests</span>
-                <strong>{filteredRequests.length}</strong>
+                <strong>{requests.length}</strong>
               </div>
               <div className="creator-earnings-insight-row">
                 <span>Withdrawal</span>
-                <strong>{summary.canWithdraw ? 'Eligible' : 'Locked'}</strong>
+                <strong>{summary.withdraw_locked ? 'Locked' : 'Eligible'}</strong>
               </div>
             </div>
           </div>
@@ -467,8 +414,8 @@ function CreatorEarningsPage() {
         <section className="creator-earnings-grid">
           <div className="creator-earnings-card">
             <div className="creator-earnings-card-head">
-              <h2>Payout Transactions</h2>
-              <span className="creator-earnings-count-badge">{filteredTransactions.length}</span>
+              <h2>Earnings Records</h2>
+              <span className="creator-earnings-count-badge">{earnings.length}</span>
             </div>
 
             <div className="creator-earnings-table">
@@ -480,22 +427,22 @@ function CreatorEarningsPage() {
                 <span>Date</span>
               </div>
 
-              {filteredTransactions.length ? (
-                filteredTransactions.map((item, index) => (
+              {earnings.length ? (
+                earnings.map((item, index) => (
                   <div className="creator-earnings-table-row" key={item.id || index}>
                     <span>
-                      <strong>{item.title || item.description || `Transaction ${index + 1}`}</strong>
+                      <strong>{item.description || `Earning ${index + 1}`}</strong>
                     </span>
-                    <span className="muted-text">{item.type || item.category || 'Revenue'}</span>
+                    <span className="muted-text">{item.type || 'monetization_earning'}</span>
                     <span className="amount-text">{formatMoney(parseAmount(item.amount || item.total))}</span>
-                    <span className={`earnings-status ${String(item.status || 'pending').toLowerCase()}`}>
-                      {item.status || 'Pending'}
+                    <span className={`earnings-status ${String(item.status || 'completed').toLowerCase()}`}>
+                      {item.status || 'completed'}
                     </span>
-                    <span className="muted-text">{formatDate(item.date || item.created_at)}</span>
+                    <span className="muted-text">{formatDate(item.created_at || item.date)}</span>
                   </div>
                 ))
               ) : (
-                <div className="creator-earnings-empty">No transactions returned yet.</div>
+                <div className="creator-earnings-empty">No earnings records returned yet.</div>
               )}
             </div>
           </div>
@@ -503,7 +450,7 @@ function CreatorEarningsPage() {
           <div className="creator-earnings-card">
             <div className="creator-earnings-card-head">
               <h2>Payout Requests</h2>
-              <span className="creator-earnings-count-badge">{filteredRequests.length}</span>
+              <span className="creator-earnings-count-badge">{requests.length}</span>
             </div>
 
             <div className="creator-earnings-table">
@@ -514,15 +461,15 @@ function CreatorEarningsPage() {
                 <span>Date</span>
               </div>
 
-              {filteredRequests.length ? (
-                filteredRequests.map((item, index) => (
+              {requests.length ? (
+                requests.map((item, index) => (
                   <div className="creator-earnings-table-row request-grid" key={item.id || index}>
                     <span className="amount-text">{formatMoney(parseAmount(item.amount || item.total))}</span>
-                    <span className="muted-text">{item.method || item.payout_method || '—'}</span>
+                    <span className="muted-text">{item.method_type || item.method || item.payout_method || '—'}</span>
                     <span className={`earnings-status ${String(item.status || 'pending').toLowerCase()}`}>
                       {item.status || 'Pending'}
                     </span>
-                    <span className="muted-text">{formatDate(item.created_at || item.date)}</span>
+                    <span className="muted-text">{formatDate(item.requested_at || item.created_at || item.date)}</span>
                   </div>
                 ))
               ) : (

@@ -1,7 +1,10 @@
 const crypto = require('crypto');
 const pool = require('../config/db');
 
-const { debitWalletForAdSpend } = require('./walletController');
+const {
+  debitWalletForAdSpend,
+  creditCreatorMonetizationEarning,
+} = require('./walletController');
 
 const CREATOR_SHARE_PERCENT = 55;
 const PLATFORM_SHARE_PERCENT = 45;
@@ -292,6 +295,33 @@ async function trackAdImpression(req, res) {
     const hostVideoOwner = await getEligibleHostVideoOwner(viewer_video_id);
     const baseSplit = calculateRevenueSplit(debitAmount);
 
+    let creatorCreditResult = null;
+
+    if (hostVideoOwner && Number(baseSplit.creator_share_amount || 0) > 0) {
+      creatorCreditResult = await creditCreatorMonetizationEarning({
+        creatorUserId: hostVideoOwner.user_id,
+        amount: baseSplit.creator_share_amount,
+        reference: `creator_earning_impression_${result.insertId}`,
+        description: `Monetization earning from ad impression on video ${hostVideoOwner.video_title || hostVideoOwner.video_id}`,
+        metadata: {
+          source: 'ad_impression',
+          impression_id: result.insertId,
+          campaign_id: Number(campaign_id),
+          ad_video_id: Number(ad_video_id),
+          viewer_video_id: viewer_video_id || null,
+          host_video_id: hostVideoOwner.video_id,
+          host_creator_id: hostVideoOwner.creator_id,
+          host_creator_user_id: hostVideoOwner.user_id,
+          creator_share_percent: CREATOR_SHARE_PERCENT,
+          platform_share_percent: PLATFORM_SHARE_PERCENT,
+          gross_revenue: baseSplit.gross_revenue,
+          creator_share_amount: baseSplit.creator_share_amount,
+          platform_share_amount: baseSplit.platform_share_amount,
+          session_id: session_id || null,
+        },
+      });
+    }
+
     const revenueAllocation = hostVideoOwner
       ? {
           ...baseSplit,
@@ -301,6 +331,8 @@ async function trackAdImpression(req, res) {
           host_video_id: hostVideoOwner.video_id,
           host_video_title: hostVideoOwner.video_title,
           creator_share_reserved: true,
+          creator_share_credited: !!creatorCreditResult?.success,
+          creator_wallet_balance_after_credit: creatorCreditResult?.wallet?.balance || null,
         }
       : {
           ...baseSplit,
@@ -312,6 +344,7 @@ async function trackAdImpression(req, res) {
           host_video_id: viewer_video_id || null,
           host_video_title: null,
           creator_share_reserved: false,
+          creator_share_credited: false,
           note: 'No eligible monetized host creator found for this viewer video',
         };
 

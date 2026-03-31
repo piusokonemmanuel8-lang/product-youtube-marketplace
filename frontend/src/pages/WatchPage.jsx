@@ -841,7 +841,7 @@ function WatchPage() {
           body: {
             campaign_id: adData.campaign_id,
             ad_video_id: adData.ad_video_id,
-            video_id: adData.viewer_video_id,
+            viewer_video_id: adData.viewer_video_id,
             break_type: 'pre-roll',
             session_id: adData.session_id,
           },
@@ -959,7 +959,7 @@ function WatchPage() {
         body: {
           campaign_id: adData.campaign_id,
           ad_video_id: adData.ad_video_id,
-          video_id: adData.viewer_video_id,
+          viewer_video_id: adData.viewer_video_id,
           session_id: adData.session_id,
           destination_url: adData.destination_url,
         },
