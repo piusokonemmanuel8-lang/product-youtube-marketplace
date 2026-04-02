@@ -211,16 +211,32 @@ function fillWithPlaceholders(items, targetCount, type = 'regular', startIndex =
   return [...safeItems, ...placeholders];
 }
 
+function goToWatch(video) {
+  if (!video?.slug) {
+    window.location.href = '/watch';
+    return;
+  }
+
+  window.location.href = `/watch/${video.slug}`;
+}
+
+function openBuyNow(video) {
+  if (!video?.buy_now_enabled || !video?.buy_now_url) {
+    return;
+  }
+
+  window.open(video.buy_now_url, '_blank', 'noopener,noreferrer');
+}
+
 function VideoCard({ video }) {
   const isPlaceholder = video?.isPlaceholder === true;
   const details = formatVideoMeta(video);
   const cardKey = video?.id || video?.video_id || video?.slug || Math.random().toString(36);
-  const watchUrl = video?.slug ? `/watch/${video.slug}` : '/watch';
   const thumbnailUrl = video?.thumbnail_url || '';
 
   if (isPlaceholder) {
     return (
-      <div className="vg-video-card vg-video-card-link" key={cardKey}>
+      <div className="vg-video-card" key={cardKey}>
         <div className="vg-video-thumb vg-video-thumb-placeholder">
           {video?.placeholderTitle || 'Featured Video'}
         </div>
@@ -241,47 +257,63 @@ function VideoCard({ video }) {
   }
 
   return (
-    <a className="vg-video-card vg-video-card-link" key={cardKey} href={watchUrl}>
+    <div className="vg-video-card" key={cardKey}>
       <div
         className={`vg-video-thumb ${thumbnailUrl ? 'has-image' : ''}`}
         style={thumbnailUrl ? { backgroundImage: `url(${thumbnailUrl})` } : undefined}
+        onClick={() => goToWatch(video)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            goToWatch(video);
+          }
+        }}
       >
         {!thumbnailUrl ? (video?.thumbnail_key ? 'Video Thumbnail' : 'Featured Video') : null}
       </div>
 
       <div className="vg-video-info">
-        <h3>{video?.title || 'Untitled Video'}</h3>
+        <h3
+          style={{ cursor: 'pointer' }}
+          onClick={() => goToWatch(video)}
+        >
+          {video?.title || 'Untitled Video'}
+        </h3>
         <div className="vg-creator-name">{details.creator}</div>
         <div className="vg-meta-text">{details.meta}</div>
         <div className="vg-meta-text">{details.viewsText}</div>
 
         <div className="vg-card-actions">
-          <span className="vg-card-btn">Watch</span>
+          <button
+            type="button"
+            className="vg-card-btn"
+            onClick={() => goToWatch(video)}
+          >
+            Watch
+          </button>
 
           {video?.buy_now_enabled == 1 && video?.buy_now_url ? (
-            <span
+            <button
+              type="button"
               className="vg-card-btn vg-card-btn-light"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                window.open(video.buy_now_url, '_blank', 'noopener,noreferrer');
-              }}
+              onClick={() => openBuyNow(video)}
             >
               Buy Now
-            </span>
+            </button>
           ) : (
             <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
           )}
         </div>
       </div>
-    </a>
+    </div>
   );
 }
 
 function ShortCard({ video }) {
   const isPlaceholder = video?.isPlaceholder === true;
   const cardKey = video?.id || video?.video_id || video?.slug || Math.random().toString(36);
-  const watchUrl = video?.slug ? `/watch/${video.slug}` : '/watch';
   const thumbnailUrl =
     video?.short_thumbnail_url ||
     video?.short_thumbnail_key ||
@@ -308,10 +340,19 @@ function ShortCard({ video }) {
   }
 
   return (
-    <a className="vg-short-card" key={cardKey} href={watchUrl}>
+    <div className="vg-short-card" key={cardKey}>
       <div
         className={`vg-short-thumb ${thumbnailUrl ? 'has-image' : ''}`}
         style={thumbnailUrl ? { backgroundImage: `url(${thumbnailUrl})` } : undefined}
+        onClick={() => goToWatch(video)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            goToWatch(video);
+          }
+        }}
       >
         {!thumbnailUrl ? 'Short' : null}
 
@@ -333,28 +374,36 @@ function ShortCard({ video }) {
         </span>
       </div>
 
-      <h4>{video?.title || 'Untitled Short'}</h4>
+      <h4
+        style={{ cursor: 'pointer' }}
+        onClick={() => goToWatch(video)}
+      >
+        {video?.title || 'Untitled Short'}
+      </h4>
       <p>{details.viewsText}</p>
 
       <div className="vg-card-actions" style={{ marginTop: '10px' }}>
-        <span className="vg-card-btn">Watch</span>
+        <button
+          type="button"
+          className="vg-card-btn"
+          onClick={() => goToWatch(video)}
+        >
+          Watch
+        </button>
 
         {video?.buy_now_enabled == 1 && video?.buy_now_url ? (
-          <span
+          <button
+            type="button"
             className="vg-card-btn vg-card-btn-light"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              window.open(video.buy_now_url, '_blank', 'noopener,noreferrer');
-            }}
+            onClick={() => openBuyNow(video)}
           >
             Buy Now
-          </span>
+          </button>
         ) : (
           <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
         )}
       </div>
-    </a>
+    </div>
   );
 }
 
@@ -373,7 +422,8 @@ function HomePage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [theme, setTheme] = useState('light');
   const [me, setMe] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [submittedSearch, setSubmittedSearch] = useState('');
 
   useEffect(() => {
     async function loadHomepageData() {
@@ -514,12 +564,12 @@ function HomePage() {
   }, [shortVideos]);
 
   const searchedRegularVideos = useMemo(() => {
-    return regularFeaturedVideos.filter((video) => matchesSearch(video, searchTerm));
-  }, [regularFeaturedVideos, searchTerm]);
+    return regularFeaturedVideos.filter((video) => matchesSearch(video, submittedSearch));
+  }, [regularFeaturedVideos, submittedSearch]);
 
   const searchedShortVideos = useMemo(() => {
-    return onlyShortVideos.filter((video) => matchesSearch(video, searchTerm));
-  }, [onlyShortVideos, searchTerm]);
+    return onlyShortVideos.filter((video) => matchesSearch(video, submittedSearch));
+  }, [onlyShortVideos, submittedSearch]);
 
   const trendingVideos = useMemo(() => {
     return [...regularFeaturedVideos]
@@ -528,8 +578,8 @@ function HomePage() {
         const bViews = Number(b?.views_count || b?.views || b?.view_count || b?.total_views || 0);
         return bViews - aViews;
       })
-      .filter((video) => matchesSearch(video, searchTerm));
-  }, [regularFeaturedVideos, searchTerm]);
+      .filter((video) => matchesSearch(video, submittedSearch));
+  }, [regularFeaturedVideos, submittedSearch]);
 
   const categoriesVideos = useMemo(() => {
     const source = regularFeaturedVideos;
@@ -547,8 +597,8 @@ function HomePage() {
             return String(categoryName).toLowerCase() === String(selectedCategory).toLowerCase();
           });
 
-    return filteredByCategory.filter((video) => matchesSearch(video, searchTerm));
-  }, [regularFeaturedVideos, selectedCategory, searchTerm]);
+    return filteredByCategory.filter((video) => matchesSearch(video, submittedSearch));
+  }, [regularFeaturedVideos, selectedCategory, submittedSearch]);
 
   const currentVideos = useMemo(() => {
     if (activeMenu === 'Trending') return trendingVideos;
@@ -556,17 +606,17 @@ function HomePage() {
     if (activeMenu === 'Saved') {
       return savedVideos
         .filter((video) => resolveVideoFormat(video) === 'regular')
-        .filter((video) => matchesSearch(video, searchTerm));
+        .filter((video) => matchesSearch(video, submittedSearch));
     }
     if (activeMenu === 'History') {
       return watchHistory
         .filter((video) => resolveVideoFormat(video) === 'regular')
-        .filter((video) => matchesSearch(video, searchTerm));
+        .filter((video) => matchesSearch(video, submittedSearch));
     }
     if (activeMenu === 'Subscriptions') {
       return subscriptionVideos
         .filter((video) => resolveVideoFormat(video) === 'regular')
-        .filter((video) => matchesSearch(video, searchTerm));
+        .filter((video) => matchesSearch(video, submittedSearch));
     }
     return categoriesVideos;
   }, [
@@ -576,7 +626,7 @@ function HomePage() {
     savedVideos,
     watchHistory,
     subscriptionVideos,
-    searchTerm,
+    submittedSearch,
   ]);
 
   const sectionTitle = useMemo(() => {
@@ -628,6 +678,20 @@ function HomePage() {
     return fillWithPlaceholders(searchedRegularVideos.slice(9, 15), 6, 'regular', 9);
   }, [searchedRegularVideos]);
 
+  const isSearching = submittedSearch.trim().length > 0;
+
+  function handleSearchSubmit(event) {
+    event.preventDefault();
+    setSubmittedSearch(searchInput.trim());
+    setActiveMenu('Home');
+  }
+
+  function handleClearSearch() {
+    setSearchInput('');
+    setSubmittedSearch('');
+    setActiveMenu('Home');
+  }
+
   return (
     <div className={`home-layout ${theme === 'dark' ? 'home-layout-dark' : 'home-layout-light'}`}>
       <header className="vg-topbar">
@@ -641,13 +705,36 @@ function HomePage() {
         </div>
 
         <div className="vg-topbar-center">
-          <input
-            className="vg-search-input"
-            type="text"
-            placeholder="Search videos, products, creators"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+          <form className="vg-search-form" onSubmit={handleSearchSubmit}>
+            <div className="vg-search-shell">
+              <input
+                className="vg-search-input"
+                type="text"
+                placeholder="Search videos, products, creators"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+              />
+
+              {searchInput ? (
+                <button
+                  type="button"
+                  className="vg-search-clear"
+                  onClick={handleClearSearch}
+                  aria-label="Clear search"
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+
+            <button
+              type="submit"
+              className="vg-search-submit"
+              aria-label="Search"
+            >
+              🔍
+            </button>
+          </form>
         </div>
 
         <div className="vg-topbar-right">
@@ -778,54 +865,72 @@ function HomePage() {
             <>
               <section className="vg-home-section-head">
                 <div>
-                  <h2>Featured Videos</h2>
-                  <p>Live videos from the real public feed.</p>
+                  <h2>{isSearching ? 'Search Results' : 'Featured Videos'}</h2>
+                  <p>
+                    {isSearching
+                      ? `Showing matches for "${submittedSearch}"`
+                      : 'Live videos from the real public feed.'}
+                  </p>
                 </div>
               </section>
 
               <section className="vg-video-grid">
-                {homeTopRegular.map((video, index) => (
+                {(isSearching ? searchedRegularVideos : homeTopRegular).map((video, index) => (
                   <VideoCard key={video?.id || `top-regular-${index}`} video={video} />
                 ))}
               </section>
 
               <section className="vg-home-section-head shorts-head">
                 <div>
-                  <h2>Shorts</h2>
-                  <p>Real short videos from creators.</p>
+                  <h2>{isSearching ? 'Matching Shorts' : 'Shorts'}</h2>
+                  <p>
+                    {isSearching
+                      ? 'Short videos matching your search.'
+                      : 'Real short videos from creators.'}
+                  </p>
                 </div>
               </section>
 
               <section className="vg-shorts-row vg-shorts-row-six">
-                {homeFirstShortRow.map((video, index) => (
+                {(isSearching ? searchedShortVideos : homeFirstShortRow).map((video, index) => (
                   <ShortCard key={video?.id || `short-row-1-${index}`} video={video} />
                 ))}
               </section>
 
-              <section className="vg-video-grid vg-video-grid-three">
-                {homeMiddleRegular.map((video, index) => (
-                  <VideoCard key={video?.id || `middle-regular-${index}`} video={video} />
-                ))}
-              </section>
+              {!isSearching ? (
+                <>
+                  <section className="vg-video-grid vg-video-grid-three">
+                    {homeMiddleRegular.map((video, index) => (
+                      <VideoCard key={video?.id || `middle-regular-${index}`} video={video} />
+                    ))}
+                  </section>
 
-              <section className="vg-home-section-head shorts-head">
-                <div>
-                  <h2>Shorts</h2>
-                  <p>More short videos from creators.</p>
-                </div>
-              </section>
+                  <section className="vg-home-section-head shorts-head">
+                    <div>
+                      <h2>Shorts</h2>
+                      <p>More short videos from creators.</p>
+                    </div>
+                  </section>
 
-              <section className="vg-shorts-row vg-shorts-row-six">
-                {homeSecondShortRow.map((video, index) => (
-                  <ShortCard key={video?.id || `short-row-2-${index}`} video={video} />
-                ))}
-              </section>
+                  <section className="vg-shorts-row vg-shorts-row-six">
+                    {homeSecondShortRow.map((video, index) => (
+                      <ShortCard key={video?.id || `short-row-2-${index}`} video={video} />
+                    ))}
+                  </section>
 
-              <section className="vg-video-grid">
-                {homeBottomRegular.map((video, index) => (
-                  <VideoCard key={video?.id || `bottom-regular-${index}`} video={video} />
-                ))}
-              </section>
+                  <section className="vg-video-grid">
+                    {homeBottomRegular.map((video, index) => (
+                      <VideoCard key={video?.id || `bottom-regular-${index}`} video={video} />
+                    ))}
+                  </section>
+                </>
+              ) : null}
+
+              {isSearching &&
+              searchedRegularVideos.length === 0 &&
+              searchedShortVideos.length === 0 ? (
+                <div className="home-state-message">No videos matched your search.</div>
+              ) : null}
             </>
           ) : (
             <>

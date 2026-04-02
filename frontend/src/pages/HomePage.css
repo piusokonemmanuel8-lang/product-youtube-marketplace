@@ -109,13 +109,26 @@
 
 .vg-topbar-center {
   flex: 1;
-  max-width: 680px;
+  max-width: 760px;
+}
+
+.vg-search-form {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vg-search-shell {
+  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 
 .vg-search-input {
   width: 100%;
   height: 50px;
-  padding: 0 18px;
+  padding: 0 52px 0 18px;
   border-radius: 999px;
   outline: none;
   font-size: 15px;
@@ -132,6 +145,53 @@
 .home-layout-dark .vg-search-input {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: #171c29;
+  color: #fff;
+}
+
+.vg-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.home-layout-light .vg-search-clear {
+  background: transparent;
+  color: #6b7280;
+}
+
+.home-layout-dark .vg-search-clear {
+  background: transparent;
+  color: #cbd5e1;
+}
+
+.vg-search-submit {
+  width: 50px;
+  height: 50px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.home-layout-light .vg-search-submit {
+  background: #eef1f6;
+  color: #111827;
+}
+
+.home-layout-dark .vg-search-submit {
+  background: #1a2131;
   color: #fff;
 }
 
@@ -593,11 +653,6 @@
   transform: translateY(-4px);
 }
 
-.vg-video-card-link {
-  text-decoration: none;
-  display: block;
-}
-
 .vg-video-thumb {
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -607,12 +662,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 14px;
+  padding: 0;
   font-weight: 700;
   overflow: hidden;
-  background-size: contain;
+  background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+  cursor: pointer;
 }
 
 .home-layout-light .vg-video-thumb {
@@ -709,6 +765,10 @@
   justify-content: center;
 }
 
+button.vg-card-btn {
+  appearance: none;
+}
+
 .home-layout-light .vg-card-btn {
   background: #111827;
   color: #fff;
@@ -783,6 +843,7 @@
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+  cursor: pointer;
 }
 
 .home-layout-light .vg-short-thumb {
@@ -958,6 +1019,15 @@
 
   .vg-topbar-right {
     justify-content: flex-start;
+  }
+
+  .vg-search-form {
+    gap: 8px;
+  }
+
+  .vg-search-submit {
+    width: 46px;
+    height: 46px;
   }
 
   .vg-main-shell {

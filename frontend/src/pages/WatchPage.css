@@ -47,6 +47,77 @@
   background: #000;
 }
 
+.watch-player-shell {
+  position: relative;
+}
+
+.watch-player-ad-shell {
+  position: relative;
+  width: 100%;
+  background: #000;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.watch-player-overlay-top-left,
+.watch-player-overlay-top-right,
+.watch-player-overlay-bottom-left {
+  position: absolute;
+  z-index: 4;
+}
+
+.watch-player-overlay-top-left {
+  top: 14px;
+  left: 14px;
+}
+
+.watch-player-overlay-top-right {
+  top: 14px;
+  right: 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.watch-player-overlay-bottom-left {
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.watch-player-overlay-pill {
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.watch-player-unmute-btn {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 18px;
+  background: rgba(17, 24, 39, 0.84);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+.watch-player-unmute-btn:hover {
+  background: rgba(11, 18, 32, 0.94);
+}
+
 .watch-inline-message {
   margin-top: 16px;
   border-radius: 16px;
@@ -112,6 +183,26 @@
   flex-wrap: wrap;
 }
 
+.watch-mobile-summary {
+  display: none;
+}
+
+.watch-collapsible-content {
+  display: block;
+}
+
+.watch-mobile-toggle-btn {
+  display: none;
+}
+
+.watch-desktop-buy-btn {
+  display: inline-flex;
+}
+
+.watch-mobile-buy-btn {
+  display: none;
+}
+
 .watch-action-btn,
 .watch-buy-btn,
 .watch-subscribe-btn,
@@ -119,7 +210,8 @@
 .watch-short-toggle-btn,
 .watch-short-ad-skip-btn,
 .watch-short-ad-visit-btn,
-.watch-short-close-btn {
+.watch-short-close-btn,
+.watch-mobile-toggle-btn {
   border-radius: 12px;
   padding: 11px 14px;
   font-weight: 700;
@@ -238,7 +330,8 @@
 .watch-short-toggle-btn:disabled,
 .watch-short-ad-skip-btn:disabled,
 .watch-short-ad-visit-btn:disabled,
-.watch-short-close-btn:disabled {
+.watch-short-close-btn:disabled,
+.watch-mobile-toggle-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
@@ -281,16 +374,20 @@
   display: flex;
   gap: 10px;
   margin-bottom: 18px;
+  width: 100%;
 }
 
 .watch-comment-input input {
-  flex: 1;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 100%;
   height: 46px;
   border: 1px solid #dcdcdc;
   border-radius: 12px;
   padding: 0 14px;
   outline: none;
   min-width: 0;
+  box-sizing: border-box;
 }
 
 .watch-comments-list {
@@ -408,6 +505,18 @@
   color: #374151;
   font-weight: 700;
   font-size: 14px;
+  overflow: hidden;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+.watch-related-thumb-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .watch-related-info {
@@ -460,19 +569,19 @@
   color: #b42318;
 }
 
-.watch-related-thumb.has-image {
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  color: transparent;
-}
-
 /* =========================
    SHORT WATCH PAGE
 ========================= */
 
 .watch-page-short {
   background: #05070d;
+}
+
+.watch-page-short .watch-short-feed-shell {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+  background: #000;
 }
 
 .watch-page-short .watch-action-btn {
@@ -487,7 +596,8 @@
 .watch-page-short .watch-buy-btn,
 .watch-page-short .watch-comment-input button,
 .watch-page-short .watch-subscribe-btn,
-.watch-page-short .watch-short-ad-visit-btn {
+.watch-page-short .watch-short-ad-visit-btn,
+.watch-page-short .watch-short-ad-visit-btn-side {
   background: #ff2d55;
   color: #fff;
   border-color: #ff2d55;
@@ -496,7 +606,8 @@
 .watch-page-short .watch-buy-btn:hover,
 .watch-page-short .watch-comment-input button:hover,
 .watch-page-short .watch-subscribe-btn:hover,
-.watch-page-short .watch-short-ad-visit-btn:hover {
+.watch-page-short .watch-short-ad-visit-btn:hover,
+.watch-page-short .watch-short-ad-visit-btn-side:hover {
   background: #e3274d;
   border-color: #e3274d;
 }
@@ -575,6 +686,7 @@
   scroll-snap-type: y mandatory;
   overscroll-behavior-y: contain;
   scrollbar-width: none;
+  background: #000;
 }
 
 .watch-short-feed::-webkit-scrollbar {
@@ -589,21 +701,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 24px 120px 24px 120px;
+  background: #000;
 }
 
 .watch-short-stage {
   position: relative;
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-items: center;
+  width: min(420px, 100%);
+  height: min(86vh, 760px);
+  display: block;
 }
 
 .watch-short-player-box {
   position: relative;
   width: 100%;
-  max-width: 460px;
+  height: 100%;
+  max-width: 420px;
+  margin: 0 auto;
   border-radius: 28px;
   overflow: hidden;
   background: #000;
@@ -612,10 +726,13 @@
 }
 
 .watch-short-player-box-full {
-  width: min(100%, 430px);
-  height: min(92vh, 860px);
-  max-width: none;
-  aspect-ratio: auto;
+  width: 100%;
+  height: 100%;
+  max-width: 420px;
+  min-height: 0;
+  border-radius: 28px;
+  aspect-ratio: 9 / 16;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
 }
 
 .watch-short-video {
@@ -655,7 +772,7 @@
 .watch-short-duration {
   position: absolute;
   right: 14px;
-  bottom: 94px;
+  bottom: 112px;
   background: rgba(0, 0, 0, 0.65);
   color: #fff;
   border-radius: 999px;
@@ -669,7 +786,7 @@
   position: absolute;
   left: 16px;
   right: 16px;
-  bottom: 148px;
+  bottom: 82px;
   z-index: 4;
   display: flex;
   flex-direction: column;
@@ -696,12 +813,19 @@
 .watch-short-bottom-dock {
   position: absolute;
   left: 16px;
-  right: 16px;
-  bottom: 18px;
+  right: 88px;
+  bottom: 16px;
   z-index: 5;
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
   gap: 10px;
+  pointer-events: none;
+}
+
+.watch-short-bottom-dock .watch-short-buy-btn,
+.watch-short-bottom-dock .watch-short-toggle-btn {
+  pointer-events: auto;
 }
 
 .watch-short-buy-btn {
@@ -726,11 +850,12 @@
 
 .watch-short-panel-open {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 86px;
-  width: min(430px, calc(100vw - 28px));
-  max-height: calc(100vh - 140px);
+  left: calc(100% + 22px);
+  top: 50%;
+  transform: translateY(-50%);
+  bottom: auto;
+  width: min(430px, calc(100vw - 520px));
+  max-height: min(82vh, 760px);
   z-index: 7;
 }
 
@@ -742,7 +867,7 @@
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(16px);
   overflow-y: auto;
-  max-height: calc(100vh - 160px);
+  max-height: min(82vh, 760px);
 }
 
 .watch-short-panel-head {
@@ -860,12 +985,12 @@
 }
 
 .watch-short-ad-top-left {
-  top: 14px;
+  top: max(14px, env(safe-area-inset-top));
   left: 14px;
 }
 
 .watch-short-ad-top-right {
-  top: 14px;
+  top: max(14px, env(safe-area-inset-top));
   right: 14px;
   display: flex;
   gap: 10px;
@@ -873,11 +998,7 @@
 }
 
 .watch-short-ad-bottom-left {
-  left: 14px;
-  bottom: 150px;
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  display: none;
 }
 
 .watch-short-ad-pill {
@@ -899,11 +1020,71 @@
 .watch-short-ad-visit-btn {
   border: none;
   border-radius: 999px;
+  box-shadow: 0 12px 24px rgba(255, 45, 85, 0.3);
 }
 
-/* =========================
-   SPONSORED AD LABEL FIX
-========================= */
+.watch-short-side-actions {
+  position: absolute;
+  right: 14px;
+  left: auto;
+  bottom: 18px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.watch-short-side-actions-ad {
+  bottom: 18px;
+}
+
+.watch-short-side-btn {
+  min-width: 64px;
+  min-height: 64px;
+  border: none;
+  border-radius: 18px;
+  padding: 10px 8px;
+  background: rgba(11, 18, 32, 0.72);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
+}
+
+.watch-short-side-btn-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.watch-short-side-btn-text {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.watch-short-unmute-btn {
+  background: rgba(17, 24, 39, 0.9);
+}
+
+.watch-short-ad-visit-btn-side {
+  background: rgba(255, 45, 85, 0.92);
+}
+
+.watch-short-ad-meta-left {
+  position: absolute;
+  left: 16px;
+  bottom: 148px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
 .watch-short-ad-top-left,
 .watch-short-ad-top-left *,
@@ -934,19 +1115,141 @@
   }
 }
 
+@media (max-width: 980px) {
+  .watch-short-slide {
+    padding-left: 36px;
+    padding-right: 36px;
+  }
+
+  .watch-short-panel-open {
+    width: min(360px, calc(100vw - 500px));
+  }
+}
+
 @media (max-width: 760px) {
+  .watch-page {
+    overflow-x: hidden;
+  }
+
   .watch-layout {
-    padding: 16px;
+    padding: 0 0 16px;
+    gap: 16px;
+  }
+
+  .watch-main {
+    width: 100%;
+  }
+
+  .watch-player {
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    box-shadow: none;
+  }
+
+  .watch-player-ad-shell {
+    border-radius: 0;
   }
 
   .watch-player-screen,
   .watch-real-video {
-    height: 260px;
+    height: min(62vw, 39dvh);
+    min-height: 250px;
+    max-height: 320px;
     font-size: 18px;
+  }
+
+  .watch-player-overlay-top-left,
+  .watch-player-overlay-top-right {
+    top: max(10px, env(safe-area-inset-top));
+  }
+
+  .watch-player-overlay-top-left {
+    left: 10px;
+  }
+
+  .watch-player-overlay-top-right {
+    right: 10px;
+    gap: 8px;
+  }
+
+  .watch-player-overlay-bottom-left {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    justify-content: center;
+  }
+
+  .watch-player-overlay-pill {
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .watch-player-unmute-btn {
+    top: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+
+  .watch-details-card,
+  .watch-creator-card,
+  .watch-description-card,
+  .watch-comments-card {
+    margin-left: 16px;
+    margin-right: 16px;
   }
 
   .watch-title {
     font-size: 24px;
+    margin-bottom: 14px;
+  }
+
+  .watch-details-card {
+    padding: 16px;
+  }
+
+  .watch-mobile-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 52px;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .watch-mobile-buy-btn {
+    display: inline-flex;
+    width: 100%;
+    justify-content: center;
+    min-height: 46px;
+  }
+
+  .watch-mobile-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 46px;
+    border: none;
+    background: #eef1f6;
+    color: #111827;
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .watch-collapsible-content {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-height 0.25s ease, opacity 0.2s ease, margin-top 0.2s ease;
+    margin-top: 0;
+  }
+
+  .watch-collapsible-content.mobile-open {
+    max-height: 800px;
+    opacity: 1;
+    margin-top: 14px;
   }
 
   .watch-meta-row,
@@ -956,18 +1259,19 @@
     align-items: flex-start;
   }
 
-  .watch-related-item {
-    flex-direction: column;
-  }
-
-  .watch-related-thumb {
-    width: 100%;
-    min-width: 100%;
+  .watch-meta-row {
+    gap: 14px;
   }
 
   .watch-action-row,
   .watch-creator-actions {
     width: 100%;
+  }
+
+  .watch-action-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 
   .watch-action-btn,
@@ -978,29 +1282,78 @@
     justify-content: center;
   }
 
-  .watch-comment-input input {
+  .watch-desktop-buy-btn {
+    display: none;
+  }
+
+  .watch-comment-input {
     width: 100%;
   }
 
+  .watch-comment-input input {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .watch-related-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .watch-related-thumb {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    border-radius: 14px;
+    background: #ffffff;
+  }
+
+  .watch-related-thumb-image {
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+    background: #ffffff;
+  }
+
+  .watch-related-info {
+    width: 100%;
+  }
+
+  .watch-short-feed-shell {
+    height: 100dvh;
+  }
+
+  .watch-short-feed {
+    height: 100dvh;
+  }
+
   .watch-short-slide {
+    min-height: 100dvh;
+    height: 100dvh;
     padding: 0;
   }
 
   .watch-short-stage {
     width: 100vw;
-    height: 100vh;
+    height: 100dvh;
   }
 
   .watch-short-player-box-full {
     width: 100vw;
-    height: 100vh;
+    height: 100dvh;
+    max-width: 100vw;
+    min-height: 100dvh;
     border-radius: 0;
+    box-shadow: none;
   }
 
   .watch-short-overlay-meta {
     left: 14px;
-    right: 14px;
-    bottom: 138px;
+    right: 82px;
+    bottom: 170px;
   }
 
   .watch-short-overlay-meta h2 {
@@ -1009,14 +1362,14 @@
 
   .watch-short-duration {
     right: 14px;
-    bottom: 88px;
+    bottom: 126px;
   }
 
   .watch-short-bottom-dock {
     left: 12px;
     right: 12px;
     bottom: max(14px, env(safe-area-inset-bottom));
-    grid-template-columns: 1fr auto;
+    justify-content: center;
   }
 
   .watch-short-buy-btn {
@@ -1036,12 +1389,13 @@
     transform: none;
     width: 100%;
     bottom: 0;
-    max-height: 72vh;
+    top: auto;
+    max-height: 72dvh;
   }
 
   .watch-short-panel-sheet {
     border-radius: 24px 24px 0 0;
-    max-height: 72vh;
+    max-height: 72dvh;
     padding: 16px;
   }
 
@@ -1071,9 +1425,38 @@
   }
 
   .watch-short-ad-bottom-left {
-    bottom: 140px;
+    display: none;
+  }
+
+  .watch-short-side-actions {
+    right: 10px;
+    left: auto;
+    bottom: 118px;
+    gap: 10px;
+  }
+
+  .watch-short-side-actions-ad {
+    bottom: 112px;
+  }
+
+  .watch-short-side-btn {
+    min-width: 58px;
+    min-height: 58px;
+    border-radius: 16px;
+    padding: 8px 6px;
+  }
+
+  .watch-short-side-btn-icon {
+    font-size: 17px;
+  }
+
+  .watch-short-side-btn-text {
+    font-size: 10px;
+  }
+
+  .watch-short-ad-meta-left {
     left: 12px;
-    right: 12px;
+    bottom: max(84px, calc(env(safe-area-inset-bottom) + 68px));
   }
 
   .watch-short-top-message {

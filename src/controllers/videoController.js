@@ -1,6 +1,9 @@
 const path = require('path');
 const crypto = require('crypto');
-const { PutObjectCommand } = require('@aws-sdk/client-s3');
+const {
+  PutObjectCommand,
+  DeleteObjectCommand,
+} = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 const pool = require('../config/db');
@@ -143,6 +146,76 @@ function isSupgadMarketplaceAuthActive(marketplaceAuth) {
     supgadStatus === 'active' ||
     authStoreUrl.includes('supgad.com')
   );
+}
+
+function isS3ManagedKey(key) {
+  return Boolean(key) && !/^https?:\/\//i.test(String(key));
+}
+
+async function deleteS3ObjectIfExists(key) {
+  if (!S3_BUCKET_NAME || !isS3ManagedKey(key)) {
+    return;
+  }
+
+  try {
+    const cleanKey = String(key).replace(/^\/+/, '');
+
+    await s3.send(
+      new DeleteObjectCommand({
+        Bucket: S3_BUCKET_NAME,
+        Key: cleanKey,
+      })
+    );
+  } catch (error) {
+    console.error('Failed to delete S3 object:', key, error.message);
+  }
+}
+
+async function deleteReplacedAssets(currentVideo, updates = {}) {
+  const deletions = [];
+
+  if (
+    updates.video_key &&
+    currentVideo.video_key &&
+    updates.video_key !== currentVideo.video_key
+  ) {
+    deletions.push(deleteS3ObjectIfExists(currentVideo.video_key));
+  }
+
+  if (
+    updates.thumbnail_key &&
+    currentVideo.thumbnail_key &&
+    updates.thumbnail_key !== currentVideo.thumbnail_key
+  ) {
+    deletions.push(deleteS3ObjectIfExists(currentVideo.thumbnail_key));
+  }
+
+  if (
+    updates.short_thumbnail_key &&
+    currentVideo.short_thumbnail_key &&
+    updates.short_thumbnail_key !== currentVideo.short_thumbnail_key
+  ) {
+    deletions.push(deleteS3ObjectIfExists(currentVideo.short_thumbnail_key));
+  }
+
+  if (
+    updates.preview_key &&
+    currentVideo.preview_key &&
+    updates.preview_key !== currentVideo.preview_key
+  ) {
+    deletions.push(deleteS3ObjectIfExists(currentVideo.preview_key));
+  }
+
+  await Promise.all(deletions);
+}
+
+async function deleteAllVideoAssets(video) {
+  await Promise.all([
+    deleteS3ObjectIfExists(video.video_key),
+    deleteS3ObjectIfExists(video.thumbnail_key),
+    deleteS3ObjectIfExists(video.short_thumbnail_key),
+    deleteS3ObjectIfExists(video.preview_key),
+  ]);
 }
 
 async function getCreatorProfileByUserId(userId) {
@@ -1004,6 +1077,7 @@ async function updateMyVideo(req, res) {
       buy_now_url,
       is_monetized,
       published_at,
+      video_replaced,
     } = req.body;
 
     const creatorProfile = await getCreatorProfileByUserId(userId);
@@ -1135,6 +1209,32 @@ async function updateMyVideo(req, res) {
         : Number(currentVideo.is_monetized || 0)
       : 0;
 
+    const finalVideoKey =
+      video_key !== undefined ? video_key : currentVideo.video_key;
+    const finalThumbnailKey =
+      thumbnail_key !== undefined ? thumbnail_key : currentVideo.thumbnail_key;
+    const finalPreviewKey =
+      preview_key !== undefined ? preview_key : currentVideo.preview_key;
+
+    const videoFileWasReplaced =
+      Number(video_replaced || 0) === 1 ||
+      (
+        video_key !== undefined &&
+        String(video_key || '') !== String(currentVideo.video_key || '')
+      );
+
+    const finalStatusValue = videoFileWasReplaced
+      ? 'draft'
+      : (status || currentVideo.status);
+
+    const finalModerationStatusValue = videoFileWasReplaced
+      ? 'pending'
+      : (moderation_status || currentVideo.moderation_status);
+
+    const finalPublishedAtValue = videoFileWasReplaced
+      ? null
+      : (published_at !== undefined ? published_at : currentVideo.published_at);
+
     await pool.query(
       `UPDATE videos
        SET channel_id = ?,
@@ -1172,35 +1272,35 @@ async function updateMyVideo(req, res) {
         video_type || currentVideo.video_type,
         source_type || currentVideo.source_type,
         storage_provider || currentVideo.storage_provider,
-        video_key !== undefined ? video_key : currentVideo.video_key,
+        finalVideoKey,
         stream_key !== undefined ? stream_key : currentVideo.stream_key,
-        thumbnail_key !== undefined ? thumbnail_key : currentVideo.thumbnail_key,
+        finalThumbnailKey,
         finalShortThumbnailKey,
-        preview_key !== undefined ? preview_key : currentVideo.preview_key,
+        finalPreviewKey,
         finalDurationSeconds,
         finalVideoFormat,
         visibility || currentVideo.visibility,
-        status || currentVideo.status,
-        moderation_status || currentVideo.moderation_status,
+        finalStatusValue,
+        finalModerationStatusValue,
         comments_enabled !== undefined ? comments_enabled : currentVideo.comments_enabled,
         finalBuyNowEnabled,
         finalBuyNowUrl,
         finalVideoUsesExternalLink ? 1 : 0,
         finalVideoUsesExternalLink ? 1 : 0,
         finalIsMonetized,
-        published_at !== undefined ? published_at : currentVideo.published_at,
+        finalPublishedAtValue,
         currentVideo.id,
       ]
     );
 
-    const finalStatusValue = status || currentVideo.status;
-    const finalModerationStatusValue =
-      moderation_status || currentVideo.moderation_status;
+    await deleteReplacedAssets(currentVideo, {
+      video_key: finalVideoKey,
+      thumbnail_key: finalThumbnailKey,
+      short_thumbnail_key: finalShortThumbnailKey,
+      preview_key: finalPreviewKey,
+    });
 
-    const shouldReturnToQueue =
-      finalStatusValue === 'draft' && finalModerationStatusValue === 'pending';
-
-    if (shouldReturnToQueue) {
+    if (videoFileWasReplaced) {
       await createModerationQueueItem({
         videoId: currentVideo.id,
         submittedBy: userId,
@@ -1218,7 +1318,9 @@ async function updateMyVideo(req, res) {
     );
 
     return res.status(200).json({
-      message: 'Video updated successfully',
+      message: videoFileWasReplaced
+        ? 'Video replaced successfully and sent for moderation'
+        : 'Video updated successfully',
       video: normalizeVideoRow(updatedVideos[0]),
     });
   } catch (error) {
@@ -1253,6 +1355,7 @@ async function deleteMyVideo(req, res) {
       });
     }
 
+    await deleteAllVideoAssets(videos[0]);
     await pool.query('DELETE FROM moderation_queue WHERE video_id = ?', [videos[0].id]);
     await pool.query('DELETE FROM videos WHERE id = ?', [videos[0].id]);
 
@@ -1282,6 +1385,7 @@ async function deleteAdminVideo(req, res) {
       });
     }
 
+    await deleteAllVideoAssets(videos[0]);
     await pool.query('DELETE FROM moderation_queue WHERE video_id = ?', [videos[0].id]);
     await pool.query('DELETE FROM videos WHERE id = ?', [videos[0].id]);
 

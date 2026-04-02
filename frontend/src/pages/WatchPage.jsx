@@ -227,22 +227,32 @@ function getChannelName(item) {
   );
 }
 
-function getChannelId(item) {
-  return item?.channel?.id || item?.channel_id || null;
+function getVideoSlug(item) {
+  return item?.slug || item?.video_slug || '';
 }
 
-function getChannelSlug(item) {
-  return (
-    item?.channel?.channel_slug ||
-    item?.channel?.slug ||
-    item?.channel?.handle ||
-    item?.channel?.username ||
-    ''
+function getFeaturedAdId(ad) {
+  return String(
+    ad?.ad_video_id ||
+      ad?.id ||
+      ad?.video_id ||
+      ad?.campaign_id ||
+      ad?.featured_ad_id ||
+      ''
   );
 }
 
-function getVideoSlug(item) {
-  return item?.slug || item?.video_slug || '';
+function getAdImpressions(ad) {
+  const value =
+    ad?.impressions_count ??
+    ad?.impression_count ??
+    ad?.total_impressions ??
+    ad?.impressions ??
+    ad?.stats?.impressions_count ??
+    ad?.metrics?.impressions ??
+    0;
+
+  return Number(value || 0);
 }
 
 function ShortDetailsPanel({
@@ -276,7 +286,6 @@ function ShortDetailsPanel({
   formatDate,
   formatViews,
   formatCompactNumber,
-  getCommentName,
   setShortInfoOpen,
 }) {
   return (
@@ -501,6 +510,11 @@ function WatchPage() {
 
   const [shortInfoOpen, setShortInfoOpen] = useState(false);
   const [activeShortIndex, setActiveShortIndex] = useState(0);
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
+  const [regularVideoMuted, setRegularVideoMuted] = useState(true);
+  const [regularAdMuted, setRegularAdMuted] = useState(true);
+  const [shortVideoMuted, setShortVideoMuted] = useState(true);
+  const [shortAdMuted, setShortAdMuted] = useState(true);
 
   const videoRef = useRef(null);
   const adVideoRef = useRef(null);
@@ -509,6 +523,8 @@ function WatchPage() {
   const adImpressionTrackedRef = useRef(false);
   const adImpressionIdRef = useRef(null);
   const shortsFeedRef = useRef(null);
+  const featuredAdsContainerRef = useRef(null);
+  const trackedFeaturedAdRefs = useRef(new Set());
 
   useEffect(() => {
     const syncSlug = () => setSlug(getSlugFromUrl());
@@ -570,8 +586,6 @@ function WatchPage() {
     channel?.subscribers ??
     0;
 
-  const shortThumb = useMemo(() => getVideoThumb(video), [video]);
-
   const shortFeed = useMemo(() => {
     if (!isShortVideo) return [];
 
@@ -620,6 +634,12 @@ function WatchPage() {
       setAdCountdown(3);
       setShortInfoOpen(false);
       setActiveShortIndex(0);
+      setMobileDetailsOpen(false);
+      setRegularVideoMuted(true);
+      setRegularAdMuted(true);
+      setShortVideoMuted(true);
+      setShortAdMuted(true);
+      trackedFeaturedAdRefs.current = new Set();
       adEndedRef.current = false;
       adImpressionTrackedRef.current = false;
       adImpressionIdRef.current = null;
@@ -790,6 +810,57 @@ function WatchPage() {
 
     loadWatchPage();
   }, [slug]);
+
+  useEffect(() => {
+    if (!featuredAds.length || !videoId || !featuredAdsContainerRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(async (entry) => {
+          if (!entry.isIntersecting) return;
+
+          const adId = entry.target.getAttribute('data-featured-ad-id');
+          if (!adId || trackedFeaturedAdRefs.current.has(adId)) return;
+
+          const ad = featuredAds.find((item) => getFeaturedAdId(item) === adId);
+          if (!ad?.campaign_id || !ad?.ad_video_id) return;
+
+          trackedFeaturedAdRefs.current.add(adId);
+
+          try {
+            await api.request('/ads/impressions', {
+              method: 'POST',
+              body: {
+                campaign_id: ad.campaign_id,
+                ad_video_id: ad.ad_video_id,
+                viewer_video_id: videoId,
+                break_type: 'featured',
+                session_id: getOrCreateAdSessionId(),
+              },
+            });
+
+            setFeaturedAds((prev) =>
+              prev.map((item) => {
+                if (getFeaturedAdId(item) !== adId) return item;
+                return {
+                  ...item,
+                  impressions_count: getAdImpressions(item) + 1,
+                };
+              })
+            );
+          } catch (error) {}
+        });
+      },
+      {
+        threshold: 0.55,
+      }
+    );
+
+    const nodes = featuredAdsContainerRef.current.querySelectorAll('[data-featured-ad-id]');
+    nodes.forEach((node) => observer.observe(node));
+
+    return () => observer.disconnect();
+  }, [featuredAds, videoId]);
 
   useEffect(() => {
     if (!isShortVideo || !shortsFeedRef.current) return;
@@ -1184,6 +1255,74 @@ function WatchPage() {
     }
   }
 
+  function syncRegularVideoMuteState() {
+    if (!videoRef.current) return;
+    setRegularVideoMuted(videoRef.current.muted || videoRef.current.volume === 0);
+  }
+
+  function syncRegularAdMuteState() {
+    if (!adVideoRef.current) return;
+    setRegularAdMuted(adVideoRef.current.muted || adVideoRef.current.volume === 0);
+  }
+
+  function syncShortVideoMuteState() {
+    if (!videoRef.current) return;
+    setShortVideoMuted(videoRef.current.muted || videoRef.current.volume === 0);
+  }
+
+  function syncShortAdMuteState() {
+    if (!adVideoRef.current) return;
+    setShortAdMuted(adVideoRef.current.muted || adVideoRef.current.volume === 0);
+  }
+
+  async function handleRegularVideoUnmute() {
+    if (!videoRef.current) return;
+
+    try {
+      videoRef.current.muted = false;
+      videoRef.current.defaultMuted = false;
+      videoRef.current.volume = 1;
+      await videoRef.current.play().catch(() => {});
+      setRegularVideoMuted(false);
+    } catch (error) {}
+  }
+
+  async function handleRegularAdUnmute() {
+    if (!adVideoRef.current) return;
+
+    try {
+      adVideoRef.current.muted = false;
+      adVideoRef.current.defaultMuted = false;
+      adVideoRef.current.volume = 1;
+      await adVideoRef.current.play().catch(() => {});
+      setRegularAdMuted(false);
+    } catch (error) {}
+  }
+
+  async function handleShortVideoUnmute() {
+    if (!videoRef.current) return;
+
+    try {
+      videoRef.current.muted = false;
+      videoRef.current.defaultMuted = false;
+      videoRef.current.volume = 1;
+      await videoRef.current.play().catch(() => {});
+      setShortVideoMuted(false);
+    } catch (error) {}
+  }
+
+  async function handleShortAdUnmute() {
+    if (!adVideoRef.current) return;
+
+    try {
+      adVideoRef.current.muted = false;
+      adVideoRef.current.defaultMuted = false;
+      adVideoRef.current.volume = 1;
+      await adVideoRef.current.play().catch(() => {});
+      setShortAdMuted(false);
+    } catch (error) {}
+  }
+
   async function handleRelatedVideoClick(event, relatedVideoId, relatedSlug) {
     if (!relatedSlug) return;
 
@@ -1264,6 +1403,23 @@ function WatchPage() {
                             src={adData.video_key}
                             poster={adData.thumbnail_key || itemThumb || ''}
                             onEnded={finishAdPlayback}
+                            onLoadedMetadata={() => {
+                              if (!adVideoRef.current) return;
+                              adVideoRef.current.muted = true;
+                              adVideoRef.current.defaultMuted = true;
+                              adVideoRef.current.volume = 0;
+                              setShortAdMuted(true);
+                              adVideoRef.current.play().catch(() => {});
+                            }}
+                            onCanPlay={() => {
+                              if (!adVideoRef.current) return;
+                              adVideoRef.current.muted = true;
+                              adVideoRef.current.defaultMuted = true;
+                              adVideoRef.current.volume = 0;
+                              setShortAdMuted(true);
+                              adVideoRef.current.play().catch(() => {});
+                            }}
+                            onVolumeChange={syncShortAdMuteState}
                           />
 
                           <div className="watch-short-ad-top-left">Sponsored Ad</div>
@@ -1282,20 +1438,34 @@ function WatchPage() {
                             )}
                           </div>
 
-                          <div className="watch-short-ad-bottom-left">
+                          <div className="watch-short-ad-meta-left">
                             {adData?.campaign_title ? (
                               <div className="watch-short-ad-pill">
                                 {adData.campaign_title}
                               </div>
+                            ) : null}
+                          </div>
+
+                          <div className="watch-short-side-actions watch-short-side-actions-ad">
+                            {shortAdMuted ? (
+                              <button
+                                type="button"
+                                className="watch-short-side-btn watch-short-unmute-btn"
+                                onClick={handleShortAdUnmute}
+                              >
+                                <span className="watch-short-side-btn-icon">🔊</span>
+                                <span className="watch-short-side-btn-text">Unmute</span>
+                              </button>
                             ) : null}
 
                             {adData?.destination_url ? (
                               <button
                                 type="button"
                                 onClick={handleAdClick}
-                                className="watch-short-ad-visit-btn"
+                                className="watch-short-side-btn watch-short-ad-visit-btn-side"
                               >
-                                Visit Advertiser
+                                <span className="watch-short-side-btn-icon">↗</span>
+                                <span className="watch-short-side-btn-text">Visit</span>
                               </button>
                             ) : null}
                           </div>
@@ -1306,7 +1476,7 @@ function WatchPage() {
                           className="watch-short-video"
                           controls={itemIsCurrent}
                           autoPlay={isActiveSlide}
-                          muted={!itemIsCurrent}
+                          muted={itemIsCurrent ? true : !itemIsCurrent}
                           playsInline
                           preload="metadata"
                           loop={!itemIsCurrent}
@@ -1314,17 +1484,23 @@ function WatchPage() {
                           poster={itemThumb}
                           onLoadedMetadata={() => {
                             if (!itemIsCurrent || !videoRef.current) return;
-                            videoRef.current.muted = false;
-                            videoRef.current.defaultMuted = false;
-                            videoRef.current.volume = 1;
+                            videoRef.current.muted = true;
+                            videoRef.current.defaultMuted = true;
+                            videoRef.current.volume = 0;
+                            setShortVideoMuted(true);
                             videoRef.current.play().catch(() => {});
                           }}
                           onCanPlay={() => {
                             if (!itemIsCurrent || !videoRef.current) return;
-                            videoRef.current.muted = false;
-                            videoRef.current.defaultMuted = false;
-                            videoRef.current.volume = 1;
+                            videoRef.current.muted = true;
+                            videoRef.current.defaultMuted = true;
+                            videoRef.current.volume = 0;
+                            setShortVideoMuted(true);
                             videoRef.current.play().catch(() => {});
+                          }}
+                          onVolumeChange={() => {
+                            if (!itemIsCurrent) return;
+                            syncShortVideoMuteState();
                           }}
                         />
                       ) : itemThumb ? (
@@ -1337,6 +1513,21 @@ function WatchPage() {
                           {adLoading && itemIsCurrent ? 'Loading ad...' : 'Short Video'}
                         </div>
                       )}
+
+                      {itemIsCurrent && !showPrerollAd ? (
+                        <div className="watch-short-side-actions">
+                          {shortVideoMuted ? (
+                            <button
+                              type="button"
+                              className="watch-short-side-btn watch-short-unmute-btn"
+                              onClick={handleShortVideoUnmute}
+                            >
+                              <span className="watch-short-side-btn-icon">🔊</span>
+                              <span className="watch-short-side-btn-text">Unmute</span>
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
 
                       <div className="watch-short-duration">
                         {formatShortDuration(item?.duration_seconds)}
@@ -1416,7 +1607,6 @@ function WatchPage() {
                           formatDate={formatDate}
                           formatViews={formatViews}
                           formatCompactNumber={formatCompactNumber}
-                          getCommentName={getCommentName}
                           setShortInfoOpen={setShortInfoOpen}
                         />
                       </div>
@@ -1430,17 +1620,9 @@ function WatchPage() {
       ) : (
         <div className="watch-layout">
           <main className="watch-main">
-            <div className="watch-player" style={{ position: 'relative' }}>
+            <div className="watch-player watch-player-shell">
               {showPrerollAd && adData?.video_key ? (
-                <div
-                  style={{
-                    position: 'relative',
-                    width: '100%',
-                    background: '#000',
-                    borderRadius: 16,
-                    overflow: 'hidden',
-                  }}
-                >
+                <div className="watch-player-ad-shell">
                   <video
                     key={adData.ad_video_id}
                     ref={adVideoRef}
@@ -1453,104 +1635,63 @@ function WatchPage() {
                     src={adData.video_key}
                     poster={adData.thumbnail_key || ''}
                     onEnded={finishAdPlayback}
+                    onLoadedMetadata={() => {
+                      if (!adVideoRef.current) return;
+                      adVideoRef.current.muted = true;
+                      adVideoRef.current.defaultMuted = true;
+                      adVideoRef.current.volume = 0;
+                      setRegularAdMuted(true);
+                      adVideoRef.current.play().catch(() => {});
+                    }}
+                    onCanPlay={() => {
+                      if (!adVideoRef.current) return;
+                      adVideoRef.current.muted = true;
+                      adVideoRef.current.defaultMuted = true;
+                      adVideoRef.current.volume = 0;
+                      setRegularAdMuted(true);
+                      adVideoRef.current.play().catch(() => {});
+                    }}
+                    onVolumeChange={syncRegularAdMuteState}
                   />
 
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 14,
-                      left: 14,
-                      background: 'rgba(0,0,0,0.72)',
-                      color: '#fff',
-                      padding: '8px 12px',
-                      borderRadius: 999,
-                      fontSize: 13,
-                      fontWeight: 600,
-                    }}
-                  >
-                    Sponsored Ad
+                  <div className="watch-player-overlay-top-left">
+                    <div className="watch-player-overlay-pill">Sponsored Ad</div>
                   </div>
 
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 14,
-                      right: 14,
-                      display: 'flex',
-                      gap: 10,
-                      alignItems: 'center',
-                    }}
-                  >
+                  <div className="watch-player-overlay-top-right">
                     {!skipReady ? (
-                      <div
-                        style={{
-                          background: 'rgba(0,0,0,0.72)',
-                          color: '#fff',
-                          padding: '8px 12px',
-                          borderRadius: 999,
-                          fontSize: 13,
-                          fontWeight: 600,
-                        }}
-                      >
-                        Skip in {adCountdown}s
-                      </div>
+                      <div className="watch-player-overlay-pill">Skip in {adCountdown}s</div>
                     ) : (
                       <button
                         type="button"
                         onClick={handleSkipAd}
-                        style={{
-                          background: '#fff',
-                          color: '#111',
-                          border: 'none',
-                          padding: '10px 14px',
-                          borderRadius: 999,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
+                        className="watch-short-ad-skip-btn"
                       >
                         Skip Ad
                       </button>
                     )}
                   </div>
 
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 14,
-                      bottom: 14,
-                      display: 'flex',
-                      gap: 10,
-                      flexWrap: 'wrap',
-                    }}
-                  >
+                  {regularAdMuted ? (
+                    <button
+                      type="button"
+                      className="watch-player-unmute-btn"
+                      onClick={handleRegularAdUnmute}
+                    >
+                      Tap to unmute
+                    </button>
+                  ) : null}
+
+                  <div className="watch-player-overlay-bottom-left">
                     {adData?.campaign_title ? (
-                      <div
-                        style={{
-                          background: 'rgba(0,0,0,0.72)',
-                          color: '#fff',
-                          padding: '8px 12px',
-                          borderRadius: 999,
-                          fontSize: 13,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {adData.campaign_title}
-                      </div>
+                      <div className="watch-player-overlay-pill">{adData.campaign_title}</div>
                     ) : null}
 
                     {adData?.destination_url ? (
                       <button
                         type="button"
                         onClick={handleAdClick}
-                        style={{
-                          background: '#ff2d55',
-                          color: '#fff',
-                          border: 'none',
-                          padding: '10px 14px',
-                          borderRadius: 999,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
+                        className="watch-short-ad-visit-btn"
                       >
                         Visit Advertiser
                       </button>
@@ -1558,30 +1699,46 @@ function WatchPage() {
                   </div>
                 </div>
               ) : video?.video_url ? (
-                <video
-                  ref={videoRef}
-                  className="watch-real-video"
-                  controls
-                  autoPlay
-                  playsInline
-                  preload="auto"
-                  src={video.video_url}
-                  poster={video?.thumbnail_url || ''}
-                  onLoadedMetadata={() => {
-                    if (!videoRef.current) return;
-                    videoRef.current.muted = false;
-                    videoRef.current.defaultMuted = false;
-                    videoRef.current.volume = 1;
-                    videoRef.current.play().catch(() => {});
-                  }}
-                  onCanPlay={() => {
-                    if (!videoRef.current) return;
-                    videoRef.current.muted = false;
-                    videoRef.current.defaultMuted = false;
-                    videoRef.current.volume = 1;
-                    videoRef.current.play().catch(() => {});
-                  }}
-                />
+                <>
+                  <video
+                    ref={videoRef}
+                    className="watch-real-video"
+                    controls
+                    autoPlay
+                    muted
+                    playsInline
+                    preload="auto"
+                    src={video.video_url}
+                    poster={video?.thumbnail_url || ''}
+                    onLoadedMetadata={() => {
+                      if (!videoRef.current) return;
+                      videoRef.current.muted = true;
+                      videoRef.current.defaultMuted = true;
+                      videoRef.current.volume = 0;
+                      setRegularVideoMuted(true);
+                      videoRef.current.play().catch(() => {});
+                    }}
+                    onCanPlay={() => {
+                      if (!videoRef.current) return;
+                      videoRef.current.muted = true;
+                      videoRef.current.defaultMuted = true;
+                      videoRef.current.volume = 0;
+                      setRegularVideoMuted(true);
+                      videoRef.current.play().catch(() => {});
+                    }}
+                    onVolumeChange={syncRegularVideoMuteState}
+                  />
+
+                  {regularVideoMuted ? (
+                    <button
+                      type="button"
+                      className="watch-player-unmute-btn"
+                      onClick={handleRegularVideoUnmute}
+                    >
+                      Tap to unmute
+                    </button>
+                  ) : null}
+                </>
               ) : (
                 <div className="watch-player-screen">
                   {adLoading ? 'Loading ad...' : 'Video Player Placeholder'}
@@ -1600,76 +1757,102 @@ function WatchPage() {
             <section className="watch-details-card">
               <h1 className="watch-title">{video?.title || 'Untitled Video'}</h1>
 
-              <div className="watch-meta-row">
-                <div>
-                  <div className="watch-meta-main">
-                    {formatViews(
-                      watchData?.metrics?.total_views ??
-                        video?.views_count ??
-                        video?.views
-                    )}
+              <div className="watch-mobile-summary">
+                <a
+                  className="watch-buy-btn watch-mobile-buy-btn"
+                  href={normalizeUrl(video?.buy_link || video?.buy_now_url || '#') || '#'}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(event) => handleBuyNowClick(event, video)}
+                  aria-disabled={buyNowLoading}
+                >
+                  {buyNowLoading ? 'Opening...' : 'Buy Now'}
+                </a>
+
+                <button
+                  type="button"
+                  className="watch-mobile-toggle-btn"
+                  onClick={() => setMobileDetailsOpen((prev) => !prev)}
+                  aria-expanded={mobileDetailsOpen}
+                >
+                  {mobileDetailsOpen ? '˄' : '˅'}
+                </button>
+              </div>
+
+              <div
+                className={`watch-collapsible-content ${
+                  mobileDetailsOpen ? 'mobile-open' : ''
+                }`}
+              >
+                <div className="watch-meta-row">
+                  <div>
+                    <div className="watch-meta-main">
+                      {formatViews(
+                        watchData?.metrics?.total_views ?? video?.views_count ?? video?.views
+                      )}
+                    </div>
+                    <div className="watch-meta-sub">
+                      {formatDate(video?.published_at || video?.created_at)}
+                    </div>
                   </div>
-                  <div className="watch-meta-sub">
-                    {formatDate(video?.published_at || video?.created_at)}
+
+                  <div className="watch-action-row">
+                    <button
+                      type="button"
+                      className="watch-action-btn"
+                      onClick={() => handleReact('like')}
+                      disabled={reactionAction}
+                    >
+                      Like {reactions?.likes_count ?? reactions?.likes ?? 0}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="watch-action-btn"
+                      onClick={() => handleReact('dislike')}
+                      disabled={reactionAction}
+                    >
+                      Dislike {reactions?.dislikes_count ?? reactions?.dislikes ?? 0}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="watch-action-btn"
+                      onClick={handleRemoveReaction}
+                      disabled={reactionAction}
+                    >
+                      Remove Reaction
+                    </button>
+
+                    <button
+                      type="button"
+                      className="watch-action-btn"
+                      onClick={handleSaveToggle}
+                      disabled={savingAction}
+                    >
+                      {isSaved ? 'Unsave' : 'Save'}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="watch-action-btn"
+                      onClick={handleShare}
+                      disabled={shareLoading}
+                    >
+                      Share {shareSummary?.total_shares ?? shareSummary?.shares ?? 0}
+                    </button>
+
+                    <a
+                      className="watch-buy-btn watch-desktop-buy-btn"
+                      href={normalizeUrl(video?.buy_link || video?.buy_now_url || '#') || '#'}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(event) => handleBuyNowClick(event, video)}
+                      aria-disabled={buyNowLoading}
+                    >
+                      {buyNowLoading ? 'Opening...' : 'Buy Now'}
+                    </a>
                   </div>
-                </div>
-
-                <div className="watch-action-row">
-                  <button
-                    type="button"
-                    className="watch-action-btn"
-                    onClick={() => handleReact('like')}
-                    disabled={reactionAction}
-                  >
-                    Like {reactions?.likes_count ?? reactions?.likes ?? 0}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="watch-action-btn"
-                    onClick={() => handleReact('dislike')}
-                    disabled={reactionAction}
-                  >
-                    Dislike {reactions?.dislikes_count ?? reactions?.dislikes ?? 0}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="watch-action-btn"
-                    onClick={handleRemoveReaction}
-                    disabled={reactionAction}
-                  >
-                    Remove Reaction
-                  </button>
-
-                  <button
-                    type="button"
-                    className="watch-action-btn"
-                    onClick={handleSaveToggle}
-                    disabled={savingAction}
-                  >
-                    {isSaved ? 'Unsave' : 'Save'}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="watch-action-btn"
-                    onClick={handleShare}
-                    disabled={shareLoading}
-                  >
-                    Share {shareSummary?.total_shares ?? shareSummary?.shares ?? 0}
-                  </button>
-
-                  <a
-                    className="watch-buy-btn"
-                    href={normalizeUrl(video?.buy_link || video?.buy_now_url || '#') || '#'}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(event) => handleBuyNowClick(event, video)}
-                    aria-disabled={buyNowLoading}
-                  >
-                    {buyNowLoading ? 'Opening...' : 'Buy Now'}
-                  </a>
                 </div>
               </div>
             </section>
@@ -1685,7 +1868,7 @@ function WatchPage() {
                     {channel?.name || channel?.channel_name || 'Creator Channel'}
                   </h3>
                   <p className="watch-creator-subs">
-                    {Number(liveSubscribers).toLocaleString()} subscribers
+                    {formatCompactNumber(liveSubscribers)} subscribers
                   </p>
                 </div>
               </div>
@@ -1716,12 +1899,7 @@ function WatchPage() {
               {tags.length ? (
                 <div className="watch-tags-wrap">
                   {tags.map((tag, index) => {
-                    const name =
-                      tag?.name ||
-                      tag?.title ||
-                      tag?.tag ||
-                      `Tag ${index + 1}`;
-
+                    const name = tag?.name || tag?.title || tag?.tag || `Tag ${index + 1}`;
                     return (
                       <span className="watch-tag-pill" key={`${name}-${index}`}>
                         {name}
@@ -1740,7 +1918,7 @@ function WatchPage() {
                   type="text"
                   placeholder="Write a comment"
                   value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
+                  onChange={(event) => setCommentText(event.target.value)}
                 />
                 <button type="submit" disabled={commentLoading}>
                   {commentLoading ? 'Posting...' : 'Comment'}
@@ -1751,7 +1929,6 @@ function WatchPage() {
                 {comments.length ? (
                   comments.map((comment, index) => {
                     const commentName = getCommentName(comment);
-
                     const content =
                       comment?.comment_text ||
                       comment?.content ||
@@ -1768,7 +1945,9 @@ function WatchPage() {
                         <div>
                           <p className="watch-comment-name">
                             {commentName}
-                            <span>{formatDate(comment?.created_at || comment?.date || 'Just now')}</span>
+                            <span>
+                              {formatDate(comment?.created_at || comment?.date || 'Just now')}
+                            </span>
                           </p>
                           <p className="watch-comment-text">{content}</p>
                         </div>
@@ -1786,33 +1965,49 @@ function WatchPage() {
             <section className="watch-sidebar-block">
               <h3 className="watch-sidebar-title">Featured Ads</h3>
 
-              <div className="watch-related-list">
+              <div className="watch-related-list" ref={featuredAdsContainerRef}>
                 {featuredAds.length ? (
-                  featuredAds.map((item, index) => {
-                    const title = item?.ad_title || item?.campaign_title || `Featured Ad ${index + 1}`;
-                    const campaignTitle = item?.campaign_title || 'Sponsored';
-                    const impressions = Number(item?.total_impressions || 0);
-                    const thumb = item?.thumbnail_key || '';
+                  featuredAds.map((ad, index) => {
+                    const featuredAdId = getFeaturedAdId(ad);
+                    const title = ad?.title || ad?.campaign_title || `Featured ad ${index + 1}`;
+                    const thumb =
+                      ad?.thumbnail_url ||
+                      ad?.thumbnail_key ||
+                      ad?.short_thumbnail_url ||
+                      '';
+                    const advertiser =
+                      ad?.advertiser_name ||
+                      ad?.brand_name ||
+                      ad?.channel_name ||
+                      'Advertiser';
+                    const impressions = getAdImpressions(ad);
 
                     return (
                       <button
                         type="button"
                         className="watch-related-item watch-featured-ad-item"
-                        key={`${item?.campaign_id || 'campaign'}-${item?.ad_video_id || index}`}
-                        onClick={() => handleFeaturedAdClick(item)}
+                        key={featuredAdId || index}
+                        data-featured-ad-id={featuredAdId}
+                        onClick={() => handleFeaturedAdClick(ad)}
                       >
-                        <div
-                          className={`watch-related-thumb ${thumb ? 'has-image' : ''}`}
-                          style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
-                        >
-                          {!thumb ? 'Ad' : null}
+                        <div className="watch-related-thumb">
+                          {thumb ? (
+                            <img
+                              src={thumb}
+                              alt={title}
+                              className="watch-related-thumb-image"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span>Ad</span>
+                          )}
                         </div>
 
                         <div className="watch-related-info">
-                          <span className="watch-featured-ad-badge">Featured Ad</span>
+                          <div className="watch-featured-ad-badge">Featured Ad</div>
                           <h4>{title}</h4>
-                          <p>{campaignTitle}</p>
-                          <p>{impressions.toLocaleString()} impressions</p>
+                          <p>{advertiser}</p>
+                          <p>{Number(impressions || 0).toLocaleString()} impressions</p>
                         </div>
                       </button>
                     );
@@ -1854,11 +2049,17 @@ function WatchPage() {
                           handleRelatedVideoClick(event, relatedVideoId, relatedSlug)
                         }
                       >
-                        <div
-                          className={`watch-related-thumb ${thumb ? 'has-image' : ''}`}
-                          style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
-                        >
-                          {!thumb ? (relatedIsShort ? 'Short' : 'Related') : null}
+                        <div className="watch-related-thumb">
+                          {thumb ? (
+                            <img
+                              src={thumb}
+                              alt={relatedTitle}
+                              className="watch-related-thumb-image"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span>{relatedIsShort ? 'Short' : 'Related'}</span>
+                          )}
                         </div>
 
                         <div className="watch-related-info">
