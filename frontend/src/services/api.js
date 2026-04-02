@@ -24,7 +24,7 @@ function buildUrl(path) {
     return `${API_BASE}${cleanPath}`;
   }
 
-  return `${API_BASE}${cleanPath}`;
+  return `${API_BASE}/api${cleanPath}`;
 }
 
 export async function apiRequest(path, options = {}) {
