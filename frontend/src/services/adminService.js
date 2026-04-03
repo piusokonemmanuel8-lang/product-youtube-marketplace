@@ -120,10 +120,34 @@ function normalizeArrayPayload(payload) {
   if (Array.isArray(payload?.applications)) return payload.applications;
   if (Array.isArray(payload?.payout_requests)) return payload.payout_requests;
   if (Array.isArray(payload?.payouts)) return payload.payouts;
+  if (Array.isArray(payload?.daily_breakdown)) return payload.daily_breakdown;
+  if (Array.isArray(payload?.videos_breakdown)) return payload.videos_breakdown;
   return [];
 }
 
 function normalizeVideo(video, index = 0) {
+  const creatorName =
+    video?.creator_name ||
+    video?.creator?.public_name ||
+    video?.creator?.full_name ||
+    video?.creator?.name ||
+    video?.user?.full_name ||
+    video?.user?.name ||
+    video?.full_name ||
+    video?.username ||
+    video?.creator_username ||
+    video?.user?.username ||
+    video?.email ||
+    video?.creator_email ||
+    'Unknown creator';
+
+  const creatorEmail =
+    video?.creator_email ||
+    video?.creator?.email ||
+    video?.user?.email ||
+    video?.email ||
+    '';
+
   return {
     id: video?.id || video?.video_id || `video-${index}`,
     uuid: video?.uuid || '',
@@ -137,6 +161,17 @@ function normalizeVideo(video, index = 0) {
       '',
     preview_key: video?.preview_key || '',
     video_key: video?.video_key || '',
+    video_url:
+      video?.video_url ||
+      video?.file_url ||
+      video?.playback_url ||
+      video?.stream_url ||
+      '',
+    buy_now_url:
+      video?.buy_now_url ||
+      video?.product_url ||
+      video?.destination_url ||
+      '',
     status: video?.status || video?.video_status || 'unknown',
     moderation_status:
       video?.moderation_status ||
@@ -145,17 +180,8 @@ function normalizeVideo(video, index = 0) {
       video?.queue_status ||
       'pending',
     visibility: video?.visibility || 'public',
-    creator_name:
-      video?.creator_name ||
-      video?.creator?.full_name ||
-      video?.user?.full_name ||
-      video?.full_name ||
-      'Unknown creator',
-    creator_email:
-      video?.creator_email ||
-      video?.creator?.email ||
-      video?.user?.email ||
-      '',
+    creator_name: creatorName,
+    creator_email: creatorEmail,
     channel_name:
       video?.channel_name ||
       video?.channel?.name ||
@@ -232,7 +258,11 @@ function normalizeSupportConversation(conversation, index = 0) {
     assigned_admin_id: conversation?.assigned_admin_id || '',
     subject: conversation?.subject || `Conversation #${conversation?.id || index + 1}`,
     status: conversation?.status || 'open',
-    last_message_at: conversation?.last_message_at || conversation?.updated_at || conversation?.created_at || '',
+    last_message_at:
+      conversation?.last_message_at ||
+      conversation?.updated_at ||
+      conversation?.created_at ||
+      '',
     created_at: conversation?.created_at || '',
     updated_at: conversation?.updated_at || '',
     last_message_text: conversation?.last_message_text || '',
@@ -336,7 +366,11 @@ function normalizeRevenueSharePolicy(payload = {}) {
 }
 
 function normalizeRevenueSplitExample(payload = {}) {
-  const source = payload?.revenue_split_example_for_100 || payload?.revenue_allocation || payload || {};
+  const source =
+    payload?.revenue_split_example_for_100 ||
+    payload?.revenue_allocation ||
+    payload ||
+    {};
 
   return {
     gross_revenue: Number(source?.gross_revenue || 100),
@@ -368,6 +402,58 @@ function normalizePayoutRequest(item, index = 0) {
     bank_name: item?.bank_name || '',
     wallet_address: item?.wallet_address || '',
     raw: item,
+  };
+}
+
+function normalizeAdminAnalytics(payload = {}) {
+  const summary = payload?.summary || {};
+  const today = payload?.today || {};
+  const yesterday = payload?.yesterday || {};
+
+  return {
+    date_range: {
+      start_date: payload?.date_range?.start_date || '',
+      end_date: payload?.date_range?.end_date || '',
+    },
+    summary: {
+      total_visitors: Number(summary?.total_visitors || 0),
+      total_video_views: Number(summary?.total_video_views || 0),
+      total_buy_now_clicks: Number(summary?.total_buy_now_clicks || 0),
+      total_videos_with_clicks: Number(summary?.total_videos_with_clicks || 0),
+    },
+    today: {
+      date: today?.date || '',
+      total_visitors: Number(today?.total_visitors || 0),
+      total_video_views: Number(today?.total_video_views || 0),
+      total_buy_now_clicks: Number(today?.total_buy_now_clicks || 0),
+    },
+    yesterday: {
+      date: yesterday?.date || '',
+      total_visitors: Number(yesterday?.total_visitors || 0),
+      total_video_views: Number(yesterday?.total_video_views || 0),
+      total_buy_now_clicks: Number(yesterday?.total_buy_now_clicks || 0),
+    },
+    daily_breakdown: Array.isArray(payload?.daily_breakdown)
+      ? payload.daily_breakdown.map((item) => ({
+          analytics_date: item?.analytics_date || '',
+          visitors: Number(item?.visitors || 0),
+          video_views: Number(item?.video_views || 0),
+          buy_now_clicks: Number(item?.buy_now_clicks || 0),
+        }))
+      : [],
+    videos_breakdown: Array.isArray(payload?.videos_breakdown)
+      ? payload.videos_breakdown.map((item, index) => ({
+          id: item?.id || `analytics-video-${index}`,
+          title: item?.title || 'Untitled video',
+          slug: item?.slug || '',
+          thumbnail_key: item?.thumbnail_key || '',
+          thumbnail_url: item?.thumbnail_url || item?.thumbnail_key || '',
+          video_views: Number(item?.video_views || 0),
+          buy_now_clicks: Number(item?.buy_now_clicks || 0),
+          raw: item,
+        }))
+      : [],
+    raw: payload,
   };
 }
 
@@ -752,6 +838,25 @@ const adminService = {
       method: 'PUT',
       body: JSON.stringify(payload || {}),
     });
+  },
+
+  async getAdminPlatformAnalytics(params = {}) {
+    const searchParams = new URLSearchParams();
+
+    if (params.date) searchParams.set('date', params.date);
+    if (params.start_date) searchParams.set('start_date', params.start_date);
+    if (params.end_date) searchParams.set('end_date', params.end_date);
+
+    const query = searchParams.toString();
+    const path = query
+      ? `/api/analytics/admin/platform?${query}`
+      : '/api/analytics/admin/platform';
+
+    const payload = await request(path, {
+      method: 'GET',
+    });
+
+    return normalizeAdminAnalytics(payload);
   },
 };
 

@@ -6,6 +6,7 @@ const TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'videos', label: 'All Videos' },
   { key: 'moderation', label: 'Pending Videos' },
+  { key: 'analytics', label: 'Analytics' },
   { key: 'channels', label: 'Channels' },
   { key: 'reports', label: 'Reports' },
   { key: 'categories', label: 'Categories' },
@@ -160,6 +161,105 @@ function getReservedFromCampaign(campaign, policy) {
   };
 }
 
+function getVideoPreviewUrl(video) {
+  return (
+    video?.video_url ||
+    video?.preview_url ||
+    video?.playback_url ||
+    video?.file_url ||
+    video?.fileUrl ||
+    video?.media_url ||
+    video?.raw?.video_url ||
+    video?.raw?.preview_url ||
+    video?.raw?.playback_url ||
+    video?.raw?.file_url ||
+    video?.raw?.fileUrl ||
+    video?.raw?.media_url ||
+    ''
+  );
+}
+
+function getVideoCreatorName(video) {
+  return (
+    video?.creator_name ||
+    video?.creatorName ||
+    video?.full_name ||
+    video?.fullName ||
+    video?.user_name ||
+    video?.user_full_name ||
+    video?.channel_owner_name ||
+    video?.channel_owner ||
+    video?.raw?.creator_name ||
+    video?.raw?.creatorName ||
+    video?.raw?.full_name ||
+    video?.raw?.fullName ||
+    video?.raw?.user_name ||
+    video?.raw?.user_full_name ||
+    'Unknown creator'
+  );
+}
+
+function getVideoCreatorEmail(video) {
+  return (
+    video?.creator_email ||
+    video?.email ||
+    video?.user_email ||
+    video?.raw?.creator_email ||
+    video?.raw?.email ||
+    video?.raw?.user_email ||
+    '—'
+  );
+}
+
+function getVideoBuyNowUrl(video) {
+  return (
+    video?.buy_now_url ||
+    video?.buyNowUrl ||
+    video?.destination_url ||
+    video?.raw?.buy_now_url ||
+    video?.raw?.buyNowUrl ||
+    video?.raw?.destination_url ||
+    ''
+  );
+}
+
+function getVideoSlug(video) {
+  return video?.slug || video?.video_slug || video?.raw?.slug || video?.raw?.video_slug || '—';
+}
+
+function getVideoModerationStatus(video) {
+  return (
+    video?.moderation_status ||
+    video?.review_status ||
+    video?.raw?.moderation_status ||
+    video?.raw?.review_status ||
+    'pending'
+  );
+}
+
+function getVideoViews(video) {
+  return (
+    video?.views_count ||
+    video?.views ||
+    video?.view_count ||
+    video?.raw?.views_count ||
+    video?.raw?.views ||
+    video?.raw?.view_count ||
+    0
+  );
+}
+
+function getPlanPrice(plan) {
+  return (
+    plan?.price ??
+    plan?.amount ??
+    plan?.monthly_price ??
+    plan?.raw?.price ??
+    plan?.raw?.amount ??
+    0
+  );
+}
+
 function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
@@ -183,6 +283,43 @@ function AdminDashboardPage() {
   const [pendingAdCampaigns, setPendingAdCampaigns] = useState([]);
   const [adVideos, setAdVideos] = useState([]);
   const [pendingAdVideos, setPendingAdVideos] = useState([]);
+
+  const [selectedPreviewVideo, setSelectedPreviewVideo] = useState(null);
+
+  const [platformAnalytics, setPlatformAnalytics] = useState({
+    date_range: {
+      start_date: '',
+      end_date: '',
+    },
+    summary: {
+      total_visitors: 0,
+      total_video_views: 0,
+      total_buy_now_clicks: 0,
+      total_videos_with_clicks: 0,
+    },
+    today: {
+      date: '',
+      total_visitors: 0,
+      total_video_views: 0,
+      total_buy_now_clicks: 0,
+    },
+    yesterday: {
+      date: '',
+      total_visitors: 0,
+      total_video_views: 0,
+      total_buy_now_clicks: 0,
+    },
+    daily_breakdown: [],
+    videos_breakdown: [],
+  });
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsFilters, setAnalyticsFilters] = useState(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+      start_date: today,
+      end_date: today,
+    };
+  });
 
   const [supportConversations, setSupportConversations] = useState([]);
   const [supportLoading, setSupportLoading] = useState(false);
@@ -253,6 +390,24 @@ function AdminDashboardPage() {
   useEffect(() => {
     checkSession();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'support') {
+      loadSupportConversations();
+    }
+
+    if (activeTab === 'monetization') {
+      loadMonetizationApplications();
+    }
+
+    if (activeTab === 'payouts') {
+      loadPayoutRequests();
+    }
+
+    if (activeTab === 'analytics') {
+      loadPlatformAnalytics();
+    }
+  }, [activeTab]);
 
   async function checkSession() {
     setLoading(true);
@@ -372,19 +527,66 @@ function AdminDashboardPage() {
     }
   }
 
-  useEffect(() => {
-    if (activeTab === 'support') {
-      loadSupportConversations();
-    }
+  async function loadPlatformAnalytics(customFilters = null) {
+    setAnalyticsLoading(true);
 
-    if (activeTab === 'monetization') {
-      loadMonetizationApplications();
+    try {
+      const filters = customFilters || analyticsFilters;
+      const data = await adminService.getAdminPlatformAnalytics(filters);
+      setPlatformAnalytics(
+        data || {
+          date_range: {
+            start_date: filters.start_date,
+            end_date: filters.end_date,
+          },
+          summary: {
+            total_visitors: 0,
+            total_video_views: 0,
+            total_buy_now_clicks: 0,
+            total_videos_with_clicks: 0,
+          },
+          today: {
+            date: '',
+            total_visitors: 0,
+            total_video_views: 0,
+            total_buy_now_clicks: 0,
+          },
+          yesterday: {
+            date: '',
+            total_visitors: 0,
+            total_video_views: 0,
+            total_buy_now_clicks: 0,
+          },
+          daily_breakdown: [],
+          videos_breakdown: [],
+        }
+      );
+    } catch (err) {
+      setError(err.message || 'Failed to load platform analytics');
+    } finally {
+      setAnalyticsLoading(false);
     }
+  }
 
-    if (activeTab === 'payouts') {
-      loadPayoutRequests();
-    }
-  }, [activeTab]);
+  function handleAnalyticsFilterChange(event) {
+    const { name, value } = event.target;
+    setAnalyticsFilters((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  }
+
+  async function handleApplyAnalyticsFilters() {
+    await loadPlatformAnalytics(analyticsFilters);
+  }
+
+  function openVideoPreview(video) {
+    setSelectedPreviewVideo(video || null);
+  }
+
+  function closeVideoPreview() {
+    setSelectedPreviewVideo(null);
+  }
 
   async function loadSupportConversations(preferredConversationId = null) {
     setSupportLoading(true);
@@ -705,18 +907,18 @@ function AdminDashboardPage() {
     return videos.filter((video) => {
       return (
         String(video?.title || '').toLowerCase().includes(term) ||
-        String(video?.creator_name || '').toLowerCase().includes(term) ||
-        String(video?.creator_email || '').toLowerCase().includes(term) ||
+        String(getVideoCreatorName(video)).toLowerCase().includes(term) ||
+        String(getVideoCreatorEmail(video)).toLowerCase().includes(term) ||
         String(video?.channel_name || '').toLowerCase().includes(term) ||
         String(video?.status || '').toLowerCase().includes(term) ||
-        String(video?.moderation_status || '').toLowerCase().includes(term)
+        String(getVideoModerationStatus(video)).toLowerCase().includes(term)
       );
     });
   }, [videos, searchTerm]);
 
   const pendingVideosFromAllVideos = useMemo(() => {
     return videos.filter((video) => {
-      const moderation = String(video?.moderation_status || '').toLowerCase();
+      const moderation = String(getVideoModerationStatus(video)).toLowerCase();
       const status = String(video?.status || '').toLowerCase();
       return moderation === 'pending' || status === 'draft';
     });
@@ -746,7 +948,7 @@ function AdminDashboardPage() {
           type: 'video',
           id: `video-pending-${video.id}`,
           video_id: video.id,
-          queue_status: video.moderation_status || 'pending',
+          queue_status: getVideoModerationStatus(video),
           reason: 'Pending from videos table',
           created_at: video.created_at || '',
           video,
@@ -769,7 +971,8 @@ function AdminDashboardPage() {
     return mergedPendingItems.filter((item) => {
       return (
         String(item?.video?.title || '').toLowerCase().includes(term) ||
-        String(item?.video?.creator_name || '').toLowerCase().includes(term) ||
+        String(getVideoCreatorName(item?.video)).toLowerCase().includes(term) ||
+        String(getVideoCreatorEmail(item?.video)).toLowerCase().includes(term) ||
         String(item?.queue_status || '').toLowerCase().includes(term) ||
         String(item?.reason || '').toLowerCase().includes(term)
       );
@@ -932,11 +1135,11 @@ function AdminDashboardPage() {
     const pendingQueue = mergedPendingItems.length;
 
     const approvedVideos = videos.filter(
-      (video) => String(video?.moderation_status).toLowerCase() === 'approved'
+      (video) => String(getVideoModerationStatus(video)).toLowerCase() === 'approved'
     ).length;
 
     const rejectedVideos = videos.filter(
-      (video) => String(video?.moderation_status).toLowerCase() === 'rejected'
+      (video) => String(getVideoModerationStatus(video)).toLowerCase() === 'rejected'
     ).length;
 
     const pendingReports = reports.filter(
@@ -1461,6 +1664,65 @@ function AdminDashboardPage() {
     }
   }
 
+  function renderPreviewModal() {
+    if (!selectedPreviewVideo) return null;
+
+    const creatorName = getVideoCreatorName(selectedPreviewVideo);
+    const creatorEmail = getVideoCreatorEmail(selectedPreviewVideo);
+    const videoUrl = getVideoPreviewUrl(selectedPreviewVideo);
+    const buyNowUrl = getVideoBuyNowUrl(selectedPreviewVideo);
+
+    return (
+      <div className="admin-modal-overlay" onClick={closeVideoPreview}>
+        <div className="admin-modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="admin-modal-header">
+            <div>
+              <h3>{selectedPreviewVideo?.title || 'Video Preview'}</h3>
+              <p>{creatorName}</p>
+            </div>
+
+            <button className="admin-btn danger" onClick={closeVideoPreview}>
+              Close
+            </button>
+          </div>
+
+          <div className="admin-modal-body">
+            {videoUrl ? (
+              <video
+                className="admin-preview-video"
+                controls
+                preload="metadata"
+                src={videoUrl}
+              />
+            ) : (
+              <div className="admin-empty">No playable video URL found</div>
+            )}
+
+            <div className="admin-meta-list" style={{ marginTop: 16 }}>
+              <div><span>Title:</span> {selectedPreviewVideo?.title || '—'}</div>
+              <div><span>Creator:</span> {creatorName}</div>
+              <div><span>Creator Email:</span> {creatorEmail}</div>
+              <div><span>Slug:</span> {getVideoSlug(selectedPreviewVideo)}</div>
+              <div><span>Status:</span> {selectedPreviewVideo?.status || '—'}</div>
+              <div><span>Moderation:</span> {getVideoModerationStatus(selectedPreviewVideo)}</div>
+              <div><span>Video URL:</span> {videoUrl || '—'}</div>
+              <div>
+                <span>Buy Now URL:</span>{' '}
+                {buyNowUrl ? (
+                  <a href={buyNowUrl} target="_blank" rel="noreferrer">
+                    {buyNowUrl}
+                  </a>
+                ) : (
+                  '—'
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderOverview() {
     return (
       <div className="admin-section">
@@ -1513,6 +1775,8 @@ function AdminDashboardPage() {
             <pre className="admin-json-block">
 {`- Global all videos admin list
 - Pending video review from all videos + moderation queue
+- Video preview before approval
+- Admin analytics with date filter
 - Admin channels list, edit, delete
 - Reports moderation
 - Categories create, edit, delete
@@ -1578,13 +1842,13 @@ function AdminDashboardPage() {
                         )}
                         <div>
                           <div className="admin-strong">{video.title}</div>
-                          <div className="admin-subtext">{video.slug || 'No slug'}</div>
+                          <div className="admin-subtext">{getVideoSlug(video)}</div>
                         </div>
                       </div>
                     </td>
                     <td>
-                      <div className="admin-strong">{video.creator_name || 'Unknown creator'}</div>
-                      <div className="admin-subtext">{video.creator_email || '—'}</div>
+                      <div className="admin-strong">{getVideoCreatorName(video)}</div>
+                      <div className="admin-subtext">{getVideoCreatorEmail(video)}</div>
                     </td>
                     <td>{video.channel_name || 'No channel'}</td>
                     <td>
@@ -1593,14 +1857,20 @@ function AdminDashboardPage() {
                       </span>
                     </td>
                     <td>
-                      <span className={`admin-badge ${getStatusClass(video.moderation_status)}`}>
-                        {video.moderation_status || 'pending'}
+                      <span className={`admin-badge ${getStatusClass(getVideoModerationStatus(video))}`}>
+                        {getVideoModerationStatus(video)}
                       </span>
                     </td>
-                    <td>{formatCount(video.views_count)}</td>
+                    <td>{formatCount(getVideoViews(video))}</td>
                     <td>{formatDate(video.created_at)}</td>
                     <td>
                       <div className="admin-actions">
+                        <button
+                          className="admin-btn secondary"
+                          onClick={() => openVideoPreview(video)}
+                        >
+                          Preview
+                        </button>
                         <button
                           className="admin-btn success"
                           disabled={actionLoadingId === `approve-video-${video.id}`}
@@ -1685,11 +1955,14 @@ function AdminDashboardPage() {
                         )}
                         <div>
                           <div className="admin-strong">{item.video?.title || 'Untitled'}</div>
-                          <div className="admin-subtext">{item.video?.slug || 'No slug'}</div>
+                          <div className="admin-subtext">{getVideoSlug(item.video)}</div>
                         </div>
                       </div>
                     </td>
-                    <td>{item.video?.creator_name || 'Unknown creator'}</td>
+                    <td>
+                      <div className="admin-strong">{getVideoCreatorName(item.video)}</div>
+                      <div className="admin-subtext">{getVideoCreatorEmail(item.video)}</div>
+                    </td>
                     <td>
                       <span className={`admin-badge ${getStatusClass(item.queue_status)}`}>
                         {item.queue_status}
@@ -1699,6 +1972,12 @@ function AdminDashboardPage() {
                     <td>{formatDate(item.created_at)}</td>
                     <td>
                       <div className="admin-actions">
+                        <button
+                          className="admin-btn secondary"
+                          onClick={() => openVideoPreview(item.video)}
+                        >
+                          Preview
+                        </button>
                         <button
                           className="admin-btn success"
                           disabled={actionLoadingId === `approve-pending-${item.video_id}`}
@@ -1715,6 +1994,147 @@ function AdminDashboardPage() {
                         </button>
                       </div>
                     </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  function renderAnalytics() {
+    const summary = platformAnalytics?.summary || {};
+    const today = platformAnalytics?.today || {};
+    const yesterday = platformAnalytics?.yesterday || {};
+    const dailyBreakdown = Array.isArray(platformAnalytics?.daily_breakdown)
+      ? platformAnalytics.daily_breakdown
+      : [];
+    const videosBreakdown = Array.isArray(platformAnalytics?.videos_breakdown)
+      ? platformAnalytics.videos_breakdown
+      : [];
+
+    return (
+      <div className="admin-section">
+        <div className="admin-panels-grid">
+          <div className="admin-panel">
+            <h3>Filter Analytics</h3>
+
+            <div className="admin-form">
+              <input
+                className="admin-input"
+                type="date"
+                name="start_date"
+                value={analyticsFilters.start_date}
+                onChange={handleAnalyticsFilterChange}
+              />
+              <input
+                className="admin-input"
+                type="date"
+                name="end_date"
+                value={analyticsFilters.end_date}
+                onChange={handleAnalyticsFilterChange}
+              />
+
+              <div className="admin-actions">
+                <button
+                  className="admin-btn secondary"
+                  onClick={handleApplyAnalyticsFilters}
+                  disabled={analyticsLoading}
+                >
+                  {analyticsLoading ? 'Loading...' : 'Apply Filter'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="admin-panel">
+            <h3>Quick Comparison</h3>
+            <div className="admin-meta-list">
+              <div><span>Today Visitors:</span> {formatCount(today.total_visitors)}</div>
+              <div><span>Yesterday Visitors:</span> {formatCount(yesterday.total_visitors)}</div>
+              <div><span>Today Video Views:</span> {formatCount(today.total_video_views)}</div>
+              <div><span>Yesterday Video Views:</span> {formatCount(yesterday.total_video_views)}</div>
+              <div><span>Today Buy Now Clicks:</span> {formatCount(today.total_buy_now_clicks)}</div>
+              <div><span>Yesterday Buy Now Clicks:</span> {formatCount(yesterday.total_buy_now_clicks)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-cards-grid">
+          <div className="admin-card">
+            <p className="admin-card-label">Total Visitors</p>
+            <h3 className="admin-card-value">{formatCount(summary.total_visitors)}</h3>
+          </div>
+
+          <div className="admin-card">
+            <p className="admin-card-label">Total Video Views</p>
+            <h3 className="admin-card-value">{formatCount(summary.total_video_views)}</h3>
+          </div>
+
+          <div className="admin-card">
+            <p className="admin-card-label">Buy Now Clicks</p>
+            <h3 className="admin-card-value">{formatCount(summary.total_buy_now_clicks)}</h3>
+          </div>
+
+          <div className="admin-card">
+            <p className="admin-card-label">Videos With Clicks</p>
+            <h3 className="admin-card-value">{formatCount(summary.total_videos_with_clicks)}</h3>
+          </div>
+        </div>
+
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Visitors</th>
+                <th>Video Views</th>
+                <th>Buy Now Clicks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dailyBreakdown.length === 0 ? (
+                <tr>
+                  <td colSpan="4" className="admin-empty">No analytics found</td>
+                </tr>
+              ) : (
+                dailyBreakdown.map((item, index) => (
+                  <tr key={item.analytics_date || index}>
+                    <td>{item.analytics_date || item.date || '—'}</td>
+                    <td>{formatCount(item.visitors || item.total_visitors)}</td>
+                    <td>{formatCount(item.video_views || item.total_video_views)}</td>
+                    <td>{formatCount(item.buy_now_clicks || item.total_buy_now_clicks)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Video</th>
+                <th>Slug</th>
+                <th>Views</th>
+                <th>Buy Now Clicks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {videosBreakdown.length === 0 ? (
+                <tr>
+                  <td colSpan="4" className="admin-empty">No video breakdown found</td>
+                </tr>
+              ) : (
+                videosBreakdown.map((video, index) => (
+                  <tr key={video.id || index}>
+                    <td>{video.title || 'Untitled video'}</td>
+                    <td>{video.slug || '—'}</td>
+                    <td>{formatCount(video.video_views || video.total_video_views)}</td>
+                    <td>{formatCount(video.buy_now_clicks || video.total_buy_now_clicks)}</td>
                   </tr>
                 ))
               )}
@@ -1923,12 +2343,18 @@ function AdminDashboardPage() {
                 filteredReports.map((report) => (
                   <tr key={report.id}>
                     <td>{report.id}</td>
-                    <td>{report.video_title}</td>
-                    <td>{report.reason}</td>
-                    <td>{report.reported_by}</td>
+                    <td>
+                      <div className="admin-strong">{report.video_title || 'Untitled video'}</div>
+                      <div className="admin-subtext">{report.video_slug || report.slug || '—'}</div>
+                    </td>
+                    <td>{report.reason || '—'}</td>
+                    <td>
+                      <div className="admin-strong">{report.reported_by || 'Unknown user'}</div>
+                      <div className="admin-subtext">{report.reported_by_email || '—'}</div>
+                    </td>
                     <td>
                       <span className={`admin-badge ${getStatusClass(report.status)}`}>
-                        {report.status}
+                        {report.status || 'pending'}
                       </span>
                     </td>
                     <td>{formatDate(report.created_at)}</td>
@@ -1942,11 +2368,18 @@ function AdminDashboardPage() {
                           Resolve
                         </button>
                         <button
-                          className="admin-btn secondary"
+                          className="admin-btn warning"
                           disabled={actionLoadingId === `report-${report.id}-reviewed`}
                           onClick={() => handleReportStatus(report.id, 'reviewed')}
                         >
                           Review
+                        </button>
+                        <button
+                          className="admin-btn secondary"
+                          disabled={actionLoadingId === `report-${report.id}-dismissed`}
+                          onClick={() => handleReportStatus(report.id, 'dismissed')}
+                        >
+                          Dismiss
                         </button>
                       </div>
                     </td>
@@ -1982,14 +2415,21 @@ function AdminDashboardPage() {
                 placeholder="Slug"
                 value={categoryForm.slug}
                 onChange={handleCategoryFormChange}
+                required
               />
-              <input
+              <select
                 className="admin-input"
                 name="parent_id"
-                placeholder="Parent ID"
                 value={categoryForm.parent_id}
                 onChange={handleCategoryFormChange}
-              />
+              >
+                <option value="">No parent</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {getCategoryName(category)}
+                  </option>
+                ))}
+              </select>
               <textarea
                 className="admin-input admin-textarea"
                 name="description"
@@ -2012,7 +2452,7 @@ function AdminDashboardPage() {
           <div className="admin-panel">
             <h3>Category Tree</h3>
             <pre className="admin-json-block">
-              {JSON.stringify(categoryTree || [], null, 2)}
+{JSON.stringify(categoryTree, null, 2)}
             </pre>
           </div>
         </div>
@@ -2025,13 +2465,14 @@ function AdminDashboardPage() {
                 <th>Name</th>
                 <th>Slug</th>
                 <th>Parent</th>
+                <th>Description</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {categories.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="admin-empty">No categories found</td>
+                  <td colSpan="6" className="admin-empty">No categories found</td>
                 </tr>
               ) : (
                 categories.map((category) => (
@@ -2039,7 +2480,8 @@ function AdminDashboardPage() {
                     <td>{category.id}</td>
                     <td>{getCategoryName(category)}</td>
                     <td>{category.slug || '—'}</td>
-                    <td>{category.parent_id || category.parentId || '—'}</td>
+                    <td>{category.parent_name || category.parent_slug || category.parent_id || '—'}</td>
+                    <td>{category.description || '—'}</td>
                     <td>
                       <div className="admin-actions">
                         <button className="admin-btn secondary" onClick={() => startEditCategory(category)}>
@@ -2067,6 +2509,19 @@ function AdminDashboardPage() {
   function renderPlans() {
     return (
       <div className="admin-section">
+        <div className="admin-toolbar">
+          <input
+            type="text"
+            className="admin-search"
+            placeholder="Search plans..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <button className="admin-btn secondary" onClick={loadAll}>
+            Refresh
+          </button>
+        </div>
+
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead>
@@ -2074,7 +2529,7 @@ function AdminDashboardPage() {
                 <th>ID</th>
                 <th>Plan</th>
                 <th>Price</th>
-                <th>Billing</th>
+                <th>Duration</th>
                 <th>Status</th>
                 <th>Description</th>
               </tr>
@@ -2082,19 +2537,36 @@ function AdminDashboardPage() {
             <tbody>
               {plans.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="admin-empty">No external posting plans found</td>
+                  <td colSpan="6" className="admin-empty">No external plans found</td>
                 </tr>
               ) : (
-                plans.map((plan, index) => (
-                  <tr key={plan.id || index}>
-                    <td>{plan.id || '—'}</td>
-                    <td>{plan.name || plan.title || `Plan ${index + 1}`}</td>
-                    <td>{plan.price || plan.amount || '—'}</td>
-                    <td>{plan.interval || plan.billing_cycle || '—'}</td>
-                    <td>{plan.status || 'active'}</td>
-                    <td>{plan.description || '—'}</td>
-                  </tr>
-                ))
+                plans
+                  .filter((plan) => {
+                    const term = searchTerm.trim().toLowerCase();
+                    if (!term) return true;
+                    return (
+                      String(plan?.name || plan?.title || '').toLowerCase().includes(term) ||
+                      String(plan?.description || '').toLowerCase().includes(term) ||
+                      String(plan?.status || '').toLowerCase().includes(term)
+                    );
+                  })
+                  .map((plan) => (
+                    <tr key={plan.id}>
+                      <td>{plan.id}</td>
+                      <td>
+                        <div className="admin-strong">{plan.name || plan.title || 'Unnamed plan'}</div>
+                        <div className="admin-subtext">{plan.slug || '—'}</div>
+                      </td>
+                      <td>${formatMoney(getPlanPrice(plan))}</td>
+                      <td>{plan.duration_days || plan.duration || '—'}</td>
+                      <td>
+                        <span className={`admin-badge ${getStatusClass(plan.status)}`}>
+                          {plan.status || 'unknown'}
+                        </span>
+                      </td>
+                      <td>{plan.description || '—'}</td>
+                    </tr>
+                  ))
               )}
             </tbody>
           </table>
@@ -2110,7 +2582,7 @@ function AdminDashboardPage() {
           <input
             type="text"
             className="admin-search"
-            placeholder="Search campaigns, advertiser, ad videos, status..."
+            placeholder="Search campaigns, advertiser, ad videos, status."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -2121,14 +2593,14 @@ function AdminDashboardPage() {
             value={adsStatusFilter}
             onChange={(e) => setAdsStatusFilter(e.target.value)}
           >
-            <option value="all">All Ads</option>
+            <option value="all">All statuses</option>
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>
-            <option value="running">Still Running</option>
             <option value="paused">Paused</option>
-            <option value="wallet_exhausted">Wallet Exhausted</option>
-            <option value="ended">Ended</option>
+            <option value="still-running">Still running</option>
             <option value="scheduled">Scheduled</option>
+            <option value="ended">Ended</option>
+            <option value="wallet_exhausted">Wallet exhausted</option>
             <option value="rejected">Rejected</option>
           </select>
 
@@ -2139,289 +2611,285 @@ function AdminDashboardPage() {
 
         <div className="admin-panels-grid">
           <div className="admin-panel">
-            <h3>Ad Campaign Controls</h3>
-            <input
-              className="admin-input"
-              name="campaignId"
-              placeholder="Campaign ID"
-              value={adTools.campaignId}
-              onChange={handleAdToolsChange}
-            />
-            <div className="admin-actions" style={{ marginTop: 12 }}>
-              <button
-                className="admin-btn success"
-                disabled={actionLoadingId === `approve-campaign-${adTools.campaignId}`}
-                onClick={() => handleApproveCampaign()}
-              >
-                Approve Campaign
-              </button>
-              <button
-                className="admin-btn warning"
-                disabled={actionLoadingId === `pause-campaign-${adTools.campaignId}`}
-                onClick={() => handlePauseCampaign()}
-              >
-                Pause Campaign
-              </button>
-              <button
-                className="admin-btn danger"
-                disabled={actionLoadingId === `delete-campaign-${adTools.campaignId}`}
-                onClick={() => handleDeleteCampaign()}
-              >
-                Delete Campaign
-              </button>
+            <h3>Ad Quick Tools</h3>
+
+            <div className="admin-form">
+              <input
+                className="admin-input"
+                name="campaignId"
+                placeholder="Campaign ID"
+                value={adTools.campaignId}
+                onChange={handleAdToolsChange}
+              />
+              <div className="admin-actions">
+                <button className="admin-btn success" type="button" onClick={() => handleApproveCampaign()}>
+                  Approve Campaign
+                </button>
+                <button className="admin-btn warning" type="button" onClick={() => handlePauseCampaign()}>
+                  Pause Campaign
+                </button>
+                <button className="admin-btn danger" type="button" onClick={() => handleDeleteCampaign()}>
+                  Delete Campaign
+                </button>
+              </div>
+
+              <input
+                className="admin-input"
+                name="adVideoId"
+                placeholder="Ad Video ID"
+                value={adTools.adVideoId}
+                onChange={handleAdToolsChange}
+              />
+              <div className="admin-actions">
+                <button className="admin-btn success" type="button" onClick={() => handleApproveAdVideo()}>
+                  Approve Ad Video
+                </button>
+              </div>
+
+              <input
+                className="admin-input"
+                name="statsCampaignId"
+                placeholder="Campaign ID for stats"
+                value={adTools.statsCampaignId}
+                onChange={handleAdToolsChange}
+              />
+              <div className="admin-actions">
+                <button className="admin-btn secondary" type="button" onClick={handleFetchCampaignStats}>
+                  Get Campaign Stats
+                </button>
+              </div>
             </div>
           </div>
 
           <div className="admin-panel">
-            <h3>Approve Ad Video</h3>
-            <input
-              className="admin-input"
-              name="adVideoId"
-              placeholder="Ad Video ID"
-              value={adTools.adVideoId}
-              onChange={handleAdToolsChange}
-            />
-            <div className="admin-actions" style={{ marginTop: 12 }}>
-              <button
-                className="admin-btn success"
-                disabled={actionLoadingId === `approve-ad-video-${adTools.adVideoId}`}
-                onClick={() => handleApproveAdVideo()}
-              >
-                Approve Ad Video
-              </button>
-            </div>
+            <h3>Campaign Stats</h3>
+            {campaignStats ? (
+              <pre className="admin-json-block">
+{JSON.stringify(campaignStats, null, 2)}
+              </pre>
+            ) : (
+              <div className="admin-empty">No campaign stats loaded</div>
+            )}
           </div>
         </div>
 
-        <div className="admin-panels-grid">
-          <div className="admin-panel">
-            <h3>Campaign Stats Lookup</h3>
-            <input
-              className="admin-input"
-              name="statsCampaignId"
-              placeholder="Campaign ID for stats"
-              value={adTools.statsCampaignId}
-              onChange={handleAdToolsChange}
-            />
-            <div className="admin-actions" style={{ marginTop: 12 }}>
-              <button
-                className="admin-btn secondary"
-                disabled={actionLoadingId === `campaign-stats-${adTools.statsCampaignId}`}
-                onClick={handleFetchCampaignStats}
-              >
-                Load Stats
-              </button>
-            </div>
-          </div>
-
-          <div className="admin-panel">
-            <h3>Revenue Reserve Rules</h3>
-            <div className="admin-meta-list">
-              <div><span>Creator Share:</span> {revenueSharePolicy.creator_share_percent}%</div>
-              <div><span>Platform Share:</span> {revenueSharePolicy.platform_share_percent}%</div>
-              <div><span>Total Creators Owed:</span> ${formatMoney(revenueReserveSummary.creator_reserved)}</div>
-              <div><span>Total Platform Keep:</span> ${formatMoney(revenueReserveSummary.platform_kept)}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="admin-panels-grid">
-          <div className="admin-panel">
-            <h3>Campaign Stats Result</h3>
-            <pre className="admin-json-block">
-              {JSON.stringify(campaignStats || {}, null, 2)}
-            </pre>
-          </div>
-
-          <div className="admin-panel">
-            <h3>Ads Endpoint Scope</h3>
-            <pre className="admin-json-block">
-{`Creator side
-- POST /api/ads/campaigns
-- POST /api/ads/videos
-
-Admin side
-- GET /api/ads/campaigns
-- GET /api/ads/campaigns/pending
-- PUT /api/ads/campaigns/:id/approve
-- PUT /api/ads/campaigns/:id/pause
-- DELETE /api/ads/campaigns/:id
-- GET /api/ads/videos
-- GET /api/ads/videos/pending
-- PUT /api/ads/videos/:id/approve
-
-Performance
-- GET /api/ads/player
-- POST /api/ads/impressions
-- POST /api/ads/clicks
-- POST /api/ads/skips
-- GET /api/ads/campaigns/:id/stats`}
-            </pre>
-          </div>
-        </div>
-
-        <div className="admin-table-wrap" style={{ marginTop: 20 }}>
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Campaign ID</th>
-                <th>Advertiser</th>
-                <th>Title</th>
-                <th>Budget</th>
-                <th>Creator Reserve</th>
-                <th>Platform Keep</th>
-                <th>Skip</th>
-                <th>Status</th>
-                <th>Dates</th>
-                <th>Notice</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAdCampaigns.length === 0 ? (
+        <div className="admin-panel" style={{ marginBottom: 24 }}>
+          <h3>Pending Ad Campaigns</h3>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
                 <tr>
-                  <td colSpan="11" className="admin-empty">No ad campaigns found</td>
+                  <th>ID</th>
+                  <th>Campaign</th>
+                  <th>Advertiser</th>
+                  <th>Status</th>
+                  <th>Budget</th>
+                  <th>Created</th>
+                  <th>Actions</th>
                 </tr>
-              ) : (
-                filteredAdCampaigns.map((campaign) => {
-                  const split = getReservedFromCampaign(campaign, revenueSharePolicy);
-
-                  return (
+              </thead>
+              <tbody>
+                {pendingAdCampaigns.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="admin-empty">No pending ad campaigns</td>
+                  </tr>
+                ) : (
+                  pendingAdCampaigns.map((campaign) => (
                     <tr key={campaign.id}>
                       <td>{campaign.id}</td>
+                      <td>
+                        <div className="admin-strong">{campaign.title}</div>
+                        <div className="admin-subtext">{campaign.destination_url || '—'}</div>
+                      </td>
                       <td>
                         <div className="admin-strong">{campaign.advertiser_name}</div>
                         <div className="admin-subtext">{campaign.advertiser_email || '—'}</div>
                       </td>
                       <td>
-                        <div className="admin-strong">{campaign.title}</div>
-                        <div className="admin-subtext">{campaign.uuid || '—'}</div>
-                      </td>
-                      <td>${formatMoney(campaign.budget)}</td>
-                      <td>${formatMoney(split.creator_reserved)}</td>
-                      <td>${formatMoney(split.platform_kept)}</td>
-                      <td>{formatCount(campaign.skip_after_seconds)}s</td>
-                      <td>
-                        <span className={`admin-badge ${getStatusClass(getCampaignRuntimeStatus(campaign))}`}>
-                          {getCampaignRuntimeStatus(campaign)}
+                        <span className={`admin-badge ${getStatusClass(campaign.status)}`}>
+                          {campaign.status}
                         </span>
                       </td>
-                      <td>
-                        <div className="admin-subtext">Start: {formatDate(campaign.starts_at)}</div>
-                        <div className="admin-subtext">End: {formatDate(campaign.ends_at)}</div>
-                      </td>
-                      <td>
-                        {campaign.pause_notice ? (
-                          <div>
-                            <div className="admin-strong">{campaign.pause_notice}</div>
-                            <div className="admin-subtext">
-                              {campaign.pause_reason || 'paused'}
-                              {campaign.paused_at ? ` • ${formatDate(campaign.paused_at)}` : ''}
-                            </div>
-                          </div>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
+                      <td>${formatMoney(campaign.budget)}</td>
+                      <td>{formatDate(campaign.created_at)}</td>
                       <td>
                         <div className="admin-actions">
-                          <button
-                            className="admin-btn success"
-                            disabled={actionLoadingId === `approve-campaign-${campaign.id}`}
-                            onClick={() => handleApproveCampaign(campaign.id)}
-                          >
+                          <button className="admin-btn success" onClick={() => handleApproveCampaign(campaign.id)}>
                             Approve
                           </button>
-                          <button
-                            className="admin-btn warning"
-                            disabled={actionLoadingId === `pause-campaign-${campaign.id}`}
-                            onClick={() => handlePauseCampaign(campaign.id)}
-                          >
-                            Pause
-                          </button>
-                          <button
-                            className="admin-btn danger"
-                            disabled={actionLoadingId === `delete-campaign-${campaign.id}`}
-                            onClick={() => handleDeleteCampaign(campaign.id)}
-                          >
+                          <button className="admin-btn danger" onClick={() => handleDeleteCampaign(campaign.id)}>
                             Delete
                           </button>
                         </div>
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <div className="admin-table-wrap" style={{ marginTop: 20 }}>
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Ad Video ID</th>
-                <th>Title</th>
-                <th>Campaign</th>
-                <th>Advertiser</th>
-                <th>Duration</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAdVideos.length === 0 ? (
+        <div className="admin-panel" style={{ marginBottom: 24 }}>
+          <h3>All Ad Campaigns</h3>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
                 <tr>
-                  <td colSpan="8" className="admin-empty">No ad videos found</td>
+                  <th>ID</th>
+                  <th>Campaign</th>
+                  <th>Advertiser</th>
+                  <th>Status</th>
+                  <th>Runtime</th>
+                  <th>Budget</th>
+                  <th>CPV</th>
+                  <th>CPC</th>
+                  <th>Created</th>
+                  <th>Actions</th>
                 </tr>
-              ) : (
-                filteredAdVideos.map((adVideo) => (
-                  <tr key={adVideo.id}>
-                    <td>{adVideo.id}</td>
-                    <td>
-                      <div className="admin-strong">{adVideo.title}</div>
-                      <div className="admin-subtext">{adVideo.video_key || 'No video key'}</div>
-                    </td>
-                    <td>
-                      <div className="admin-strong">{adVideo.campaign_title || `Campaign ${adVideo.campaign_id}`}</div>
-                      <div className="admin-subtext">Campaign ID: {adVideo.campaign_id || '—'}</div>
-                    </td>
-                    <td>{adVideo.advertiser_name || '—'}</td>
-                    <td>{formatCount(adVideo.duration_seconds)}s</td>
-                    <td>
-                      <span className={`admin-badge ${getStatusClass(adVideo.status)}`}>
-                        {adVideo.status}
-                      </span>
-                    </td>
-                    <td>{formatDate(adVideo.created_at)}</td>
-                    <td>
-                      <div className="admin-actions">
-                        <button
-                          className="admin-btn success"
-                          disabled={actionLoadingId === `approve-ad-video-${adVideo.id}`}
-                          onClick={() => handleApproveAdVideo(adVideo.id)}
-                        >
-                          Approve
-                        </button>
-                        <button
-                          className="admin-btn secondary"
-                          onClick={() =>
-                            setAdTools((prev) => ({
-                              ...prev,
-                              adVideoId: String(adVideo.id),
-                            }))
-                          }
-                        >
-                          Use ID
-                        </button>
-                      </div>
-                    </td>
+              </thead>
+              <tbody>
+                {filteredAdCampaigns.length === 0 ? (
+                  <tr>
+                    <td colSpan="10" className="admin-empty">No ad campaigns found</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filteredAdCampaigns.map((campaign) => (
+                    <tr key={campaign.id}>
+                      <td>{campaign.id}</td>
+                      <td>
+                        <div className="admin-strong">{campaign.title}</div>
+                        <div className="admin-subtext">{campaign.destination_url || '—'}</div>
+                      </td>
+                      <td>
+                        <div className="admin-strong">{campaign.advertiser_name}</div>
+                        <div className="admin-subtext">{campaign.advertiser_email || '—'}</div>
+                      </td>
+                      <td>
+                        <span className={`admin-badge ${getStatusClass(campaign.status)}`}>
+                          {campaign.status}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`admin-badge ${getStatusClass(getCampaignRuntimeStatus(campaign))}`}>
+                          {getCampaignRuntimeStatus(campaign)}
+                        </span>
+                      </td>
+                      <td>${formatMoney(campaign.budget)}</td>
+                      <td>${formatMoney(campaign.cost_per_view)}</td>
+                      <td>${formatMoney(campaign.cost_per_click)}</td>
+                      <td>{formatDate(campaign.created_at)}</td>
+                      <td>
+                        <div className="admin-actions">
+                          <button className="admin-btn success" onClick={() => handleApproveCampaign(campaign.id)}>
+                            Approve
+                          </button>
+                          <button className="admin-btn warning" onClick={() => handlePauseCampaign(campaign.id)}>
+                            Pause
+                          </button>
+                          <button className="admin-btn danger" onClick={() => handleDeleteCampaign(campaign.id)}>
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="admin-panel" style={{ marginBottom: 24 }}>
+          <h3>Pending Ad Videos</h3>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Title</th>
+                  <th>Campaign</th>
+                  <th>Advertiser</th>
+                  <th>Status</th>
+                  <th>Duration</th>
+                  <th>Created</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingAdVideos.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" className="admin-empty">No pending ad videos</td>
+                  </tr>
+                ) : (
+                  pendingAdVideos.map((adVideo) => (
+                    <tr key={adVideo.id}>
+                      <td>{adVideo.id}</td>
+                      <td>{adVideo.title}</td>
+                      <td>{adVideo.campaign_title || adVideo.campaign_id || '—'}</td>
+                      <td>{adVideo.advertiser_name || '—'}</td>
+                      <td>
+                        <span className={`admin-badge ${getStatusClass(adVideo.status)}`}>
+                          {adVideo.status}
+                        </span>
+                      </td>
+                      <td>{formatHours(adVideo.duration_seconds)}s</td>
+                      <td>{formatDate(adVideo.created_at)}</td>
+                      <td>
+                        <div className="admin-actions">
+                          <button className="admin-btn success" onClick={() => handleApproveAdVideo(adVideo.id)}>
+                            Approve
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="admin-panel">
+          <h3>All Ad Videos</h3>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Title</th>
+                  <th>Campaign</th>
+                  <th>Advertiser</th>
+                  <th>Status</th>
+                  <th>Duration</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAdVideos.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="admin-empty">No ad videos found</td>
+                  </tr>
+                ) : (
+                  filteredAdVideos.map((adVideo) => (
+                    <tr key={adVideo.id}>
+                      <td>{adVideo.id}</td>
+                      <td>{adVideo.title}</td>
+                      <td>{adVideo.campaign_title || adVideo.campaign_id || '—'}</td>
+                      <td>{adVideo.advertiser_name || '—'}</td>
+                      <td>
+                        <span className={`admin-badge ${getStatusClass(adVideo.status)}`}>
+                          {adVideo.status}
+                        </span>
+                      </td>
+                      <td>{formatHours(adVideo.duration_seconds)}s</td>
+                      <td>{formatDate(adVideo.created_at)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );
@@ -2434,130 +2902,139 @@ Performance
           <input
             type="text"
             className="admin-search"
-            placeholder="Search subject, user, email, status..."
+            placeholder="Search subject, user, email, message..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-
           <select
             className="admin-input"
             style={{ maxWidth: 220 }}
             value={supportStatusFilter}
             onChange={(e) => setSupportStatusFilter(e.target.value)}
           >
-            <option value="all">All Conversations</option>
+            <option value="all">All statuses</option>
             <option value="open">Open</option>
             <option value="pending">Pending</option>
+            <option value="resolved">Resolved</option>
             <option value="closed">Closed</option>
           </select>
-
-          <button
-            className="admin-btn secondary"
-            onClick={() => loadSupportConversations(selectedSupportConversationId)}
-          >
-            Refresh
+          <button className="admin-btn secondary" onClick={() => loadSupportConversations()}>
+            {supportLoading ? 'Loading...' : 'Refresh'}
           </button>
         </div>
 
         <div className="admin-panels-grid">
           <div className="admin-panel">
-            <h3>All Conversations</h3>
-
-            {supportLoading ? (
-              <div className="admin-empty">Loading conversations...</div>
-            ) : filteredSupportConversations.length === 0 ? (
-              <div className="admin-empty">No support conversations found</div>
-            ) : (
-              <div className="videogad-video-table">
-                {filteredSupportConversations.map((conversation) => (
+            <h3>Conversations</h3>
+            <div className="admin-list">
+              {filteredSupportConversations.length === 0 ? (
+                <div className="admin-empty">No support conversations found</div>
+              ) : (
+                filteredSupportConversations.map((conversation) => (
                   <button
                     key={conversation.id}
                     type="button"
-                    className="videogad-video-row"
+                    className={`admin-list-item ${Number(selectedSupportConversationId) === Number(conversation.id) ? 'active' : ''}`}
                     onClick={() => loadSupportConversation(conversation.id)}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      background:
-                        Number(selectedSupportConversationId) === Number(conversation.id)
-                          ? 'rgba(255,255,255,0.05)'
-                          : undefined,
-                      border:
-                        Number(selectedSupportConversationId) === Number(conversation.id)
-                          ? '1px solid rgba(255,255,255,0.14)'
-                          : '1px solid transparent',
-                      cursor: 'pointer',
-                    }}
                   >
-                    <div className="video-main">
-                      <div>
-                        <h4>{conversation.subject || `Conversation #${conversation.id}`}</h4>
-                        <p>{conversation.user_full_name || conversation.user_email || 'Unknown user'}</p>
-                        <p>{conversation.last_message_text || 'No message yet'}</p>
-                      </div>
+                    <div className="admin-strong">{conversation.subject || 'No subject'}</div>
+                    <div className="admin-subtext">
+                      {conversation.user_full_name || conversation.user_username || 'Unknown user'}
                     </div>
-
-                    <div className="video-meta">
+                    <div className="admin-subtext">{conversation.user_email || '—'}</div>
+                    <div className="admin-subtext">{conversation.last_message_text || '—'}</div>
+                    <div className="admin-actions" style={{ marginTop: 8 }}>
                       <span className={`admin-badge ${getStatusClass(conversation.status)}`}>
-                        {conversation.status}
+                        {conversation.status || 'open'}
                       </span>
-                      <span>{conversation.unread_count ? `${conversation.unread_count} unread` : 'read'}</span>
+                      {Number(conversation.unread_count || 0) > 0 ? (
+                        <span className="admin-badge pending">
+                          {conversation.unread_count} unread
+                        </span>
+                      ) : null}
                     </div>
                   </button>
-                ))}
-              </div>
-            )}
+                ))
+              )}
+            </div>
           </div>
 
           <div className="admin-panel">
             <h3>Conversation Details</h3>
 
-            {!selectedSupportConversationId ? (
-              <div className="admin-empty">Select a support conversation first</div>
-            ) : supportConversationLoading ? (
+            {supportConversationLoading ? (
               <div className="admin-empty">Loading conversation...</div>
+            ) : !selectedSupportConversation ? (
+              <div className="admin-empty">Select a conversation</div>
             ) : (
               <>
-                <div className="marketplace-status-box" style={{ marginBottom: 16 }}>
-                  <div className="marketplace-row">
-                    <span>Subject</span>
-                    <strong>{selectedSupportConversation?.subject || '—'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>User</span>
-                    <strong>{selectedSupportConversation?.user_full_name || selectedSupportConversation?.user_email || '—'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Status</span>
-                    <strong>{selectedSupportConversation?.status || '—'}</strong>
-                  </div>
+                <div className="admin-meta-list">
+                  <div><span>Subject:</span> {selectedSupportConversation.subject || '—'}</div>
+                  <div><span>User:</span> {selectedSupportConversation.user_full_name || selectedSupportConversation.user_username || '—'}</div>
+                  <div><span>Email:</span> {selectedSupportConversation.user_email || '—'}</div>
+                  <div><span>Status:</span> {selectedSupportConversation.status || '—'}</div>
+                  <div><span>Created:</span> {formatDate(selectedSupportConversation.created_at)}</div>
                 </div>
 
-                <div className="admin-actions" style={{ marginBottom: 16 }}>
-                  <button className="admin-btn secondary" disabled={supportStatusUpdating} onClick={() => handleSupportStatusChange('open')}>Open</button>
-                  <button className="admin-btn warning" disabled={supportStatusUpdating} onClick={() => handleSupportStatusChange('pending')}>Pending</button>
-                  <button className="admin-btn success" disabled={supportStatusUpdating} onClick={() => handleSupportStatusChange('closed')}>Closed</button>
+                <div className="admin-actions" style={{ marginTop: 16 }}>
+                  <button
+                    className="admin-btn secondary"
+                    disabled={supportStatusUpdating}
+                    onClick={() => handleSupportStatusChange('open')}
+                  >
+                    Mark Open
+                  </button>
+                  <button
+                    className="admin-btn warning"
+                    disabled={supportStatusUpdating}
+                    onClick={() => handleSupportStatusChange('pending')}
+                  >
+                    Mark Pending
+                  </button>
+                  <button
+                    className="admin-btn success"
+                    disabled={supportStatusUpdating}
+                    onClick={() => handleSupportStatusChange('resolved')}
+                  >
+                    Mark Resolved
+                  </button>
+                  <button
+                    className="admin-btn danger"
+                    disabled={supportStatusUpdating}
+                    onClick={() => handleSupportStatusChange('closed')}
+                  >
+                    Close
+                  </button>
                 </div>
 
-                <div className="admin-json-block" style={{ marginBottom: 16, minHeight: 180 }}>
-                  {supportMessages.length
-                    ? supportMessages.map((message) => {
-                        const senderName = message?.full_name || message?.email || message?.sender_role || 'User';
-                        return `[${formatDate(message.created_at)}] ${senderName}: ${message.message_text}`;
-                      }).join('\n\n')
-                    : 'No messages yet'}
+                <div className="admin-list" style={{ marginTop: 16 }}>
+                  {supportMessages.length === 0 ? (
+                    <div className="admin-empty">No messages yet</div>
+                  ) : (
+                    supportMessages.map((message, index) => (
+                      <div key={message.id || index} className="admin-list-item">
+                        <div className="admin-strong">
+                          {message.sender_name || message.role || 'Message'}
+                        </div>
+                        <div className="admin-subtext">{formatDate(message.created_at)}</div>
+                        <div style={{ marginTop: 8 }}>
+                          {message.message_text || message.body || '—'}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
 
-                <form onSubmit={handleSendSupportReply} className="admin-form">
+                <form className="admin-form" onSubmit={handleSendSupportReply} style={{ marginTop: 16 }}>
                   <textarea
                     className="admin-input admin-textarea"
-                    placeholder="Write admin reply..."
+                    placeholder="Write reply..."
                     value={supportReplyMessage}
                     onChange={(e) => setSupportReplyMessage(e.target.value)}
                   />
                   <div className="admin-actions">
-                    <button className="admin-btn success" disabled={supportSending} type="submit">
-                      Send Reply
+                    <button className="admin-btn success" type="submit" disabled={supportSending}>
+                      {supportSending ? 'Sending...' : 'Send Reply'}
                     </button>
                   </div>
                 </form>
@@ -2576,165 +3053,72 @@ Performance
           <input
             type="text"
             className="admin-search"
-            placeholder="Search public name, email, status."
+            placeholder="Search creator, email, status..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-
           <select
             className="admin-input"
             style={{ maxWidth: 220 }}
             value={monetizationStatusFilter}
             onChange={(e) => setMonetizationStatusFilter(e.target.value)}
           >
-            <option value="all">All Applications</option>
+            <option value="all">All statuses</option>
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
           </select>
-
-          <button
-            className="admin-btn secondary"
-            onClick={() => loadMonetizationApplications(selectedMonetizationApplicationId)}
-          >
-            Refresh
+          <button className="admin-btn secondary" onClick={() => loadMonetizationApplications()}>
+            {monetizationLoading ? 'Loading...' : 'Refresh'}
           </button>
         </div>
 
         <div className="admin-panels-grid">
           <div className="admin-panel">
-            <h3>Revenue Sharing Formula</h3>
-            <div className="admin-meta-list">
-              <div><span>Creator:</span> {revenueSharePolicy.creator_share_percent}%</div>
-              <div><span>Platform:</span> {revenueSharePolicy.platform_share_percent}%</div>
-              <div><span>$100 Example Creator:</span> ${formatMoney(revenueSplitExample.creator_share_amount)}</div>
-              <div><span>$100 Example Platform:</span> ${formatMoney(revenueSplitExample.platform_share_amount)}</div>
-            </div>
-          </div>
-
-          <div className="admin-panel">
-            <h3>Admin Reserve View</h3>
-            <div className="admin-meta-list">
-              <div><span>Total Ad Revenue Seen:</span> ${formatMoney(revenueReserveSummary.gross)}</div>
-              <div><span>Reserved For Creators:</span> ${formatMoney(revenueReserveSummary.creator_reserved)}</div>
-              <div><span>Reserved For Platform:</span> ${formatMoney(revenueReserveSummary.platform_kept)}</div>
-              <div><span>Payout Safe Balance:</span> ${formatMoney(revenueReserveSummary.creator_reserved)}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="admin-panels-grid">
-          <div className="admin-panel">
-            <h3>Monetization Applications</h3>
-
-            {monetizationLoading ? (
-              <div className="admin-empty">Loading monetization applications...</div>
-            ) : filteredMonetizationApplications.length === 0 ? (
-              <div className="admin-empty">No monetization applications found</div>
-            ) : (
-              <div className="videogad-video-table">
-                {filteredMonetizationApplications.map((application) => (
+            <h3>Applications</h3>
+            <div className="admin-list">
+              {filteredMonetizationApplications.length === 0 ? (
+                <div className="admin-empty">No applications found</div>
+              ) : (
+                filteredMonetizationApplications.map((application) => (
                   <button
                     key={application.id}
                     type="button"
-                    className="videogad-video-row"
+                    className={`admin-list-item ${Number(selectedMonetizationApplicationId) === Number(application.id) ? 'active' : ''}`}
                     onClick={() => loadMonetizationApplication(application.id)}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      background:
-                        Number(selectedMonetizationApplicationId) === Number(application.id)
-                          ? 'rgba(255,255,255,0.05)'
-                          : undefined,
-                      border:
-                        Number(selectedMonetizationApplicationId) === Number(application.id)
-                          ? '1px solid rgba(255,255,255,0.14)'
-                          : '1px solid transparent',
-                      cursor: 'pointer',
-                    }}
                   >
-                    <div className="video-main">
-                      <div>
-                        <h4>{application.public_name || application.full_name || `Application #${application.id}`}</h4>
-                        <p>{application.email || 'No email'}</p>
-                        <p>Subscribers: {formatCount(application.subscriber_count)}</p>
-                        <p>Views: {formatCount(application.total_video_views)} • Watch Hours: {formatHours(application.total_watch_hours)}h</p>
-                      </div>
+                    <div className="admin-strong">
+                      {application.public_name || application.full_name || 'Unknown creator'}
                     </div>
-
-                    <div className="video-meta">
+                    <div className="admin-subtext">{application.email || '—'}</div>
+                    <div className="admin-actions" style={{ marginTop: 8 }}>
                       <span className={`admin-badge ${getStatusClass(application.status)}`}>
-                        {application.status}
-                      </span>
-                      <span>
-                        {application.has_active_external_subscription ? 'Subscription Active' : 'No Active Subscription'}
+                        {application.status || 'pending'}
                       </span>
                     </div>
                   </button>
-                ))}
-              </div>
-            )}
+                ))
+              )}
+            </div>
           </div>
 
           <div className="admin-panel">
             <h3>Application Details</h3>
 
-            {!selectedMonetizationApplicationId ? (
-              <div className="admin-empty">Select a monetization application first</div>
-            ) : !selectedMonetizationApplication ? (
-              <div className="admin-empty">Loading application.</div>
+            {!selectedMonetizationApplication ? (
+              <div className="admin-empty">Select an application</div>
             ) : (
               <>
-                <div className="marketplace-status-box" style={{ marginBottom: 16 }}>
-                  <div className="marketplace-row">
-                    <span>Creator</span>
-                    <strong>
-                      {selectedMonetizationApplication.public_name ||
-                        selectedMonetizationApplication.full_name ||
-                        '—'}
-                    </strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Email</span>
-                    <strong>{selectedMonetizationApplication.email || '—'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Status</span>
-                    <strong>{selectedMonetizationApplication.status || '—'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Subscribers</span>
-                    <strong>{formatCount(selectedMonetizationApplication.subscriber_count)}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Total Views</span>
-                    <strong>{formatCount(selectedMonetizationApplication.total_video_views)}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Watch Hours</span>
-                    <strong>{formatHours(selectedMonetizationApplication.total_watch_hours)}h</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Revenue Formula</span>
-                    <strong>
-                      Creator {revenueSharePolicy.creator_share_percent}% / Platform {revenueSharePolicy.platform_share_percent}%
-                    </strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>$100 Example</span>
-                    <strong>
-                      Creator ${formatMoney(revenueSplitExample.creator_share_amount)} / Platform ${formatMoney(revenueSplitExample.platform_share_amount)}
-                    </strong>
-                  </div>
-                  {selectedMonetizationApplication.admin_note ? (
-                    <div className="marketplace-row">
-                      <span>Admin Note</span>
-                      <strong>{selectedMonetizationApplication.admin_note}</strong>
-                    </div>
-                  ) : null}
+                <div className="admin-meta-list">
+                  <div><span>Name:</span> {selectedMonetizationApplication.public_name || selectedMonetizationApplication.full_name || '—'}</div>
+                  <div><span>Email:</span> {selectedMonetizationApplication.email || '—'}</div>
+                  <div><span>Status:</span> {selectedMonetizationApplication.status || '—'}</div>
+                  <div><span>Channel:</span> {selectedMonetizationApplication.channel_name || '—'}</div>
+                  <div><span>Created:</span> {formatDate(selectedMonetizationApplication.created_at)}</div>
+                  <div><span>Note:</span> {selectedMonetizationApplication.note || selectedMonetizationApplication.admin_note || '—'}</div>
                 </div>
 
-                <div className="admin-actions">
+                <div className="admin-actions" style={{ marginTop: 16 }}>
                   <button
                     className="admin-btn success"
                     disabled={monetizationActionLoading}
@@ -2742,15 +3126,18 @@ Performance
                   >
                     Approve
                   </button>
-
                   <button
-                    className="admin-btn warning"
+                    className="admin-btn danger"
                     disabled={monetizationActionLoading}
                     onClick={() => handleMonetizationDecision('rejected')}
                   >
                     Reject
                   </button>
                 </div>
+
+                <pre className="admin-json-block" style={{ marginTop: 16 }}>
+{JSON.stringify(selectedMonetizationApplication, null, 2)}
+                </pre>
               </>
             )}
           </div>
@@ -2766,174 +3153,106 @@ Performance
           <input
             type="text"
             className="admin-search"
-            placeholder="Search creator, email, method, payout status..."
+            placeholder="Search payout request, creator, email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-
           <select
             className="admin-input"
             style={{ maxWidth: 220 }}
             value={payoutStatusFilter}
             onChange={(e) => setPayoutStatusFilter(e.target.value)}
           >
-            <option value="all">All Payouts</option>
+            <option value="all">All statuses</option>
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
             <option value="paid">Paid</option>
+            <option value="rejected">Rejected</option>
           </select>
-
-          <button
-            className="admin-btn secondary"
-            onClick={() => loadPayoutRequests(selectedPayoutRequestId)}
-          >
-            Refresh
+          <button className="admin-btn secondary" onClick={() => loadPayoutRequests()}>
+            {payoutLoading ? 'Loading...' : 'Refresh'}
           </button>
         </div>
 
         <div className="admin-panels-grid">
           <div className="admin-panel">
             <h3>Payout Requests</h3>
-
-            {payoutLoading ? (
-              <div className="admin-empty">Loading payout requests...</div>
-            ) : filteredPayoutRequests.length === 0 ? (
-              <div className="admin-empty">No payout requests found</div>
-            ) : (
-              <div className="videogad-video-table">
-                {filteredPayoutRequests.map((item) => (
+            <div className="admin-list">
+              {filteredPayoutRequests.length === 0 ? (
+                <div className="admin-empty">No payout requests found</div>
+              ) : (
+                filteredPayoutRequests.map((item) => (
                   <button
                     key={item.id}
                     type="button"
-                    className="videogad-video-row"
+                    className={`admin-list-item ${Number(selectedPayoutRequestId) === Number(item.id) ? 'active' : ''}`}
                     onClick={() => {
                       setSelectedPayoutRequestId(Number(item.id));
                       setSelectedPayoutRequest(item);
                     }}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      background:
-                        Number(selectedPayoutRequestId) === Number(item.id)
-                          ? 'rgba(255,255,255,0.05)'
-                          : undefined,
-                      border:
-                        Number(selectedPayoutRequestId) === Number(item.id)
-                          ? '1px solid rgba(255,255,255,0.14)'
-                          : '1px solid transparent',
-                      cursor: 'pointer',
-                    }}
                   >
-                    <div className="video-main">
-                      <div>
-                        <h4>{item.public_name || item.full_name || `Payout #${item.id}`}</h4>
-                        <p>{item.email || 'No email'}</p>
-                        <p>Amount: ${formatMoney(item.amount)} • Method: {item.method_type || '—'}</p>
-                      </div>
+                    <div className="admin-strong">
+                      {item.public_name || item.full_name || 'Unknown creator'}
                     </div>
-
-                    <div className="video-meta">
+                    <div className="admin-subtext">{item.email || '—'}</div>
+                    <div className="admin-subtext">
+                      Amount: ${formatMoney(item.amount || item.requested_amount || 0)}
+                    </div>
+                    <div className="admin-actions" style={{ marginTop: 8 }}>
                       <span className={`admin-badge ${getStatusClass(item.status)}`}>
-                        {item.status}
+                        {item.status || 'pending'}
                       </span>
-                      <span>{item.currency_code || 'USD'}</span>
                     </div>
                   </button>
-                ))}
-              </div>
-            )}
+                ))
+              )}
+            </div>
           </div>
 
           <div className="admin-panel">
-            <h3>Payout Details</h3>
+            <h3>Payout Request Details</h3>
 
-            {!selectedPayoutRequestId ? (
-              <div className="admin-empty">Select a payout request first</div>
-            ) : !selectedPayoutRequest ? (
-              <div className="admin-empty">Loading payout request.</div>
+            {!selectedPayoutRequest ? (
+              <div className="admin-empty">Select a payout request</div>
             ) : (
               <>
-                <div className="marketplace-status-box" style={{ marginBottom: 16 }}>
-                  <div className="marketplace-row">
-                    <span>Creator</span>
-                    <strong>{selectedPayoutRequest.public_name || selectedPayoutRequest.full_name || '—'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Email</span>
-                    <strong>{selectedPayoutRequest.email || '—'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Amount</span>
-                    <strong>${formatMoney(selectedPayoutRequest.amount)}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Currency</span>
-                    <strong>{selectedPayoutRequest.currency_code || 'USD'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Status</span>
-                    <strong>{selectedPayoutRequest.status || '—'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Requested At</span>
-                    <strong>{formatDate(selectedPayoutRequest.requested_at || selectedPayoutRequest.created_at)}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Available Balance</span>
-                    <strong>${formatMoney(selectedPayoutRequest.available_balance)}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Method Type</span>
-                    <strong>{selectedPayoutRequest.method_type || '—'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Account Name</span>
-                    <strong>{selectedPayoutRequest.account_name || '—'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Account Number</span>
-                    <strong>{selectedPayoutRequest.account_number || '—'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Bank Name</span>
-                    <strong>{selectedPayoutRequest.bank_name || '—'}</strong>
-                  </div>
-                  <div className="marketplace-row">
-                    <span>Wallet Address</span>
-                    <strong>{selectedPayoutRequest.wallet_address || '—'}</strong>
-                  </div>
+                <div className="admin-meta-list">
+                  <div><span>Name:</span> {selectedPayoutRequest.public_name || selectedPayoutRequest.full_name || '—'}</div>
+                  <div><span>Email:</span> {selectedPayoutRequest.email || '—'}</div>
+                  <div><span>Status:</span> {selectedPayoutRequest.status || '—'}</div>
+                  <div><span>Method:</span> {selectedPayoutRequest.method_type || '—'}</div>
+                  <div><span>Amount:</span> ${formatMoney(selectedPayoutRequest.amount || selectedPayoutRequest.requested_amount || 0)}</div>
+                  <div><span>Created:</span> {formatDate(selectedPayoutRequest.created_at)}</div>
+                  <div><span>Note:</span> {selectedPayoutRequest.note || '—'}</div>
                 </div>
 
-                <div className="admin-actions">
+                <div className="admin-actions" style={{ marginTop: 16 }}>
                   <button
                     className="admin-btn success"
-                    disabled={payoutActionLoading || String(selectedPayoutRequest.status || '').toLowerCase() === 'paid'}
+                    disabled={payoutActionLoading}
                     onClick={() => handlePayoutStatus('approved')}
                   >
                     Approve
                   </button>
-
                   <button
                     className="admin-btn warning"
-                    disabled={payoutActionLoading || String(selectedPayoutRequest.status || '').toLowerCase() === 'paid'}
-                    onClick={() => handlePayoutStatus('rejected')}
-                  >
-                    Reject
-                  </button>
-
-                  <button
-                    className="admin-btn secondary"
-                    disabled={
-                      payoutActionLoading ||
-                      String(selectedPayoutRequest.status || '').toLowerCase() === 'rejected' ||
-                      String(selectedPayoutRequest.status || '').toLowerCase() === 'paid'
-                    }
+                    disabled={payoutActionLoading}
                     onClick={handleMarkPayoutPaid}
                   >
                     Mark Paid
                   </button>
+                  <button
+                    className="admin-btn danger"
+                    disabled={payoutActionLoading}
+                    onClick={() => handlePayoutStatus('rejected')}
+                  >
+                    Reject
+                  </button>
                 </div>
+
+                <pre className="admin-json-block" style={{ marginTop: 16 }}>
+{JSON.stringify(selectedPayoutRequest, null, 2)}
+                </pre>
               </>
             )}
           </div>
@@ -2950,6 +3269,8 @@ Performance
         return renderVideos();
       case 'moderation':
         return renderModeration();
+      case 'analytics':
+        return renderAnalytics();
       case 'channels':
         return renderChannels();
       case 'reports':
@@ -2972,25 +3293,21 @@ Performance
   }
 
   if (!sessionChecked || loading) {
-    return <div className="admin-loading">Loading admin dashboard.</div>;
+    return (
+      <div className="admin-dashboard-page">
+        <div className="admin-main">
+          <div className="admin-empty">Loading admin dashboard...</div>
+        </div>
+      </div>
+    );
   }
 
   if (!authorized) {
     return (
       <div className="admin-dashboard-page">
-        <main className="admin-main" style={{ width: '100%' }}>
-          <div className="admin-alert error">
-            You must login with an admin account to access this dashboard.
-          </div>
-          <button
-            className="admin-btn secondary"
-            onClick={() => {
-              window.location.href = '/admin-login';
-            }}
-          >
-            Go to Admin Login
-          </button>
-        </main>
+        <div className="admin-main">
+          <div className="admin-empty">Admin session expired. Please login again.</div>
+        </div>
       </div>
     );
   }
@@ -2998,16 +3315,16 @@ Performance
   return (
     <div className="admin-dashboard-page">
       <aside className="admin-sidebar">
-        <div className="admin-brand">
-          <h2>VideoGad Admin</h2>
-          <p>Marketplace control panel</p>
+        <div className="admin-sidebar-header">
+          <h2>Admin</h2>
+          <p>Marketplace Control</p>
         </div>
 
-        <nav className="admin-nav">
+        <nav className="admin-sidebar-nav">
           {TABS.map((tab) => (
             <button
               key={tab.key}
-              className={`admin-nav-item ${activeTab === tab.key ? 'active' : ''}`}
+              className={`admin-sidebar-link ${activeTab === tab.key ? 'active' : ''}`}
               onClick={() => {
                 setSearchTerm('');
                 if (tab.key !== 'ads') setAdsStatusFilter('all');
@@ -3040,6 +3357,11 @@ Performance
               return;
             }
 
+            if (activeTab === 'analytics') {
+              loadPlatformAnalytics();
+              return;
+            }
+
             loadAll();
           }}
         >
@@ -3063,6 +3385,7 @@ Performance
         {successMessage ? <div className="admin-alert success">{successMessage}</div> : null}
 
         {renderTabContent()}
+        {renderPreviewModal()}
       </main>
     </div>
   );
