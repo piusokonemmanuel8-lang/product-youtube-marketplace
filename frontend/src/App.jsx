@@ -23,6 +23,20 @@ import CreatorSupportPage from './pages/CreatorSupportPage';
 import CreatorMonetizationPage from './pages/CreatorMonetizationPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import AdminLoginPage from './pages/AdminLoginPage';
+
+import TermsOfServicePage from './pages/legal/TermsOfServicePage';
+import PrivacyPolicyPage from './pages/legal/PrivacyPolicyPage';
+import CreatorTermsPage from './pages/legal/CreatorTermsPage';
+import VendorTermsPage from './pages/legal/VendorTermsPage';
+import MonetizationPolicyPage from './pages/legal/MonetizationPolicyPage';
+import CommunityGuidelinesPage from './pages/legal/CommunityGuidelinesPage';
+import ProhibitedContentPage from './pages/legal/ProhibitedContentPage';
+import RefundPolicyPage from './pages/legal/RefundPolicyPage';
+import ContactPage from './pages/support/ContactPage';
+import AboutPage from './pages/company/AboutPage';
+import HowItWorksPage from './pages/company/HowItWorksPage';
+
+import Footer from './components/Footer';
 import { getCreatorMonetizationEligibility } from './services/creatorDashboardService';
 
 function getCurrentPath() {
@@ -133,6 +147,15 @@ function MonetizedOnlyRoute({ children, featureTitle }) {
   return content;
 }
 
+function PageWithFooter({ children }) {
+  return (
+    <>
+      {children}
+      <Footer />
+    </>
+  );
+}
+
 function App() {
   const [path, setPath] = useState(getCurrentPath());
 
@@ -172,98 +195,270 @@ function App() {
   }
 
   if (path === '/creator-marketplace-auth') {
-    return <CreatorMarketplaceAuthPage />;
+    return (
+      <PageWithFooter>
+        <CreatorMarketplaceAuthPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/creator-subscription') {
-    return <CreatorSubscriptionPage />;
+    return (
+      <PageWithFooter>
+        <CreatorSubscriptionPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/creator-support') {
-    return <CreatorSupportPage />;
+    return (
+      <PageWithFooter>
+        <CreatorSupportPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/creator-monetization') {
-    return <CreatorMonetizationPage />;
+    return (
+      <PageWithFooter>
+        <CreatorMonetizationPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/creator-dashboard') {
-    return <CreatorDashboardPage />;
+    return (
+      <PageWithFooter>
+        <CreatorDashboardPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/create-channel') {
-    return <CreateChannelPage />;
+    return (
+      <PageWithFooter>
+        <CreateChannelPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/become-creator') {
-    return <BecomeCreatorPage />;
+    return (
+      <PageWithFooter>
+        <BecomeCreatorPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/upload-video') {
-    return <UploadVideoPage />;
+    return (
+      <PageWithFooter>
+        <UploadVideoPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/my-videos') {
-    return <MyVideosPage />;
+    return (
+      <PageWithFooter>
+        <MyVideosPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/creator-analytics') {
-    return <CreatorAnalyticsPage />;
+    return (
+      <PageWithFooter>
+        <CreatorAnalyticsPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/creator-ads') {
-    return <CreatorAdsPage />;
+    return (
+      <PageWithFooter>
+        <CreatorAdsPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/creator-ads-analytics') {
-    return <CreatorAdsAnalyticsPage />;
+    return (
+      <PageWithFooter>
+        <CreatorAdsAnalyticsPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/creator-wallet') {
-    return <CreatorWalletPage />;
+    return (
+      <PageWithFooter>
+        <CreatorWalletPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/creator-earnings') {
     return (
-      <MonetizedOnlyRoute featureTitle="Earnings">
-        <CreatorEarningsPage />
-      </MonetizedOnlyRoute>
+      <PageWithFooter>
+        <MonetizedOnlyRoute featureTitle="Earnings">
+          <CreatorEarningsPage />
+        </MonetizedOnlyRoute>
+      </PageWithFooter>
     );
   }
 
   if (path === '/creator-payout') {
     return (
-      <MonetizedOnlyRoute featureTitle="Payout">
-        <CreatorPayoutPage />
-      </MonetizedOnlyRoute>
+      <PageWithFooter>
+        <MonetizedOnlyRoute featureTitle="Payout">
+          <CreatorPayoutPage />
+        </MonetizedOnlyRoute>
+      </PageWithFooter>
+    );
+  }
+
+  if (path === '/terms') {
+    return (
+      <PageWithFooter>
+        <TermsOfServicePage />
+      </PageWithFooter>
+    );
+  }
+
+  if (path === '/privacy') {
+    return (
+      <PageWithFooter>
+        <PrivacyPolicyPage />
+      </PageWithFooter>
+    );
+  }
+
+  if (path === '/creator-terms') {
+    return (
+      <PageWithFooter>
+        <CreatorTermsPage />
+      </PageWithFooter>
+    );
+  }
+
+  if (path === '/vendor-terms') {
+    return (
+      <PageWithFooter>
+        <VendorTermsPage />
+      </PageWithFooter>
+    );
+  }
+
+  if (path === '/monetization-policy') {
+    return (
+      <PageWithFooter>
+        <MonetizationPolicyPage />
+      </PageWithFooter>
+    );
+  }
+
+  if (path === '/community-guidelines') {
+    return (
+      <PageWithFooter>
+        <CommunityGuidelinesPage />
+      </PageWithFooter>
+    );
+  }
+
+  if (path === '/prohibited-content') {
+    return (
+      <PageWithFooter>
+        <ProhibitedContentPage />
+      </PageWithFooter>
+    );
+  }
+
+  if (path === '/refund-policy') {
+    return (
+      <PageWithFooter>
+        <RefundPolicyPage />
+      </PageWithFooter>
+    );
+  }
+
+  if (path === '/contact') {
+    return (
+      <PageWithFooter>
+        <ContactPage />
+      </PageWithFooter>
+    );
+  }
+
+  if (path === '/about') {
+    return (
+      <PageWithFooter>
+        <AboutPage />
+      </PageWithFooter>
+    );
+  }
+
+  if (path === '/how-it-works') {
+    return (
+      <PageWithFooter>
+        <HowItWorksPage />
+      </PageWithFooter>
     );
   }
 
   if (path === '/login') {
-    return <LoginPage />;
+    return (
+      <PageWithFooter>
+        <LoginPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/register') {
-    return <RegisterPage />;
+    return (
+      <PageWithFooter>
+        <RegisterPage />
+      </PageWithFooter>
+    );
   }
 
   if (path.startsWith('/watch/')) {
-    return <WatchPage />;
+    return (
+      <PageWithFooter>
+        <WatchPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/watch') {
-    return <WatchPage />;
+    return (
+      <PageWithFooter>
+        <WatchPage />
+      </PageWithFooter>
+    );
   }
 
   if (path.startsWith('/channel/')) {
-    return <ChannelPage />;
+    return (
+      <PageWithFooter>
+        <ChannelPage />
+      </PageWithFooter>
+    );
   }
 
   if (path === '/channel') {
-    return <ChannelPage />;
+    return (
+      <PageWithFooter>
+        <ChannelPage />
+      </PageWithFooter>
+    );
   }
 
-  return <HomePage />;
+  return (
+    <PageWithFooter>
+      <HomePage />
+    </PageWithFooter>
+  );
 }
 
 export default App;

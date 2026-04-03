@@ -2,6 +2,10 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const pool = require('../config/db');
+const {
+  sendWelcomeEmail,
+  sendLoginAlertEmail,
+} = require('../services/emailService');
 
 function signToken(user) {
   return jwt.sign(
@@ -161,6 +165,10 @@ async function register(req, res) {
     const user = users[0];
     const token = signToken(user);
 
+    sendWelcomeEmail(user).catch((emailError) => {
+      console.error('Welcome email failed:', emailError.message);
+    });
+
     return res.status(201).json({
       message: 'Registration successful',
       token,
@@ -227,6 +235,10 @@ async function login(req, res) {
     const token = signToken(user);
 
     delete user.password_hash;
+
+    sendLoginAlertEmail(user).catch((emailError) => {
+      console.error('Login alert email failed:', emailError.message);
+    });
 
     return res.json({
       message: 'Login successful',
