@@ -83,6 +83,10 @@ const allowedOrigins = [
   'http://127.0.0.1:5189',
   'http://127.0.0.1:5190',
   'http://127.0.0.1:5191',
+  'http://videogad.com',
+  'https://videogad.com',
+  'http://www.videogad.com',
+  'https://www.videogad.com',
 ];
 
 app.use(
