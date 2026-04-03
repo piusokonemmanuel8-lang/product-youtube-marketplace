@@ -7,6 +7,61 @@ export async function requestVideoUploadUrl(payload) {
   });
 }
 
+export async function uploadVideoFileToBackend(file, onProgress) {
+  const token =
+    localStorage.getItem('token') ||
+    localStorage.getItem('videogad_token') ||
+    localStorage.getItem('authToken') ||
+    '';
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+
+    formData.append('video_file', file);
+
+    xhr.open('POST', '/api/videos/upload-file', true);
+
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && typeof onProgress === 'function') {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        onProgress(percent);
+      }
+    };
+
+    xhr.onload = () => {
+      let responseData = null;
+
+      try {
+        responseData = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch (error) {
+        responseData = null;
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(responseData);
+      } else {
+        reject(
+          new Error(
+            responseData?.message ||
+              `Failed to upload video file to backend (${xhr.status})`
+          )
+        );
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new Error('Network error while uploading video file to backend'));
+    };
+
+    xhr.send(formData);
+  });
+}
+
 export async function createVideo(payload) {
   return apiRequest('/videos', {
     method: 'POST',

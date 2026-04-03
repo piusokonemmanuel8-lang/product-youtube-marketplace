@@ -1,5 +1,8 @@
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const {
   PutObjectCommand,
   DeleteObjectCommand,
@@ -11,6 +14,8 @@ const s3 = require('../config/s3');
 const {
   ensureLatestSubscriptionState,
 } = require('./externalPostingPlanController');
+
+const execFileAsync = promisify(execFile);
 
 const S3_BUCKET_NAME =
   process.env.AWS_S3_BUCKET ||
@@ -414,6 +419,113 @@ async function createModerationQueueItem({
   );
 
   return result.insertId;
+}
+
+function ensureDir(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+function removeFileIfExists(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch (error) {
+    console.error('Failed to remove temp file:', filePath, error.message);
+  }
+}
+
+async function uploadProcessedVideoFile(req, res) {
+  let inputPath = '';
+  let outputPath = '';
+
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        message: 'Video file is required',
+      });
+    }
+
+    if (!S3_BUCKET_NAME) {
+      return res.status(500).json({
+        message: 'AWS S3 bucket is not configured',
+      });
+    }
+
+    const creatorProfile = await getCreatorProfileByUserId(req.user.id);
+
+    if (!creatorProfile) {
+      return res.status(403).json({
+        message: 'Only creators can upload videos',
+      });
+    }
+
+    inputPath = req.file.path;
+
+    const processedDir = path.join(process.cwd(), 'uploads', 'processed-videos');
+    ensureDir(processedDir);
+
+    const outputFileName = `${Date.now()}-${crypto.randomUUID()}.mp4`;
+    outputPath = path.join(processedDir, outputFileName);
+
+    await execFileAsync('ffmpeg', [
+      '-y',
+      '-i',
+      inputPath,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'medium',
+      '-crf',
+      '28',
+      '-vf',
+      'scale=1280:-2:force_original_aspect_ratio=decrease',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      '-movflags',
+      '+faststart',
+      '-pix_fmt',
+      'yuv420p',
+      outputPath,
+    ]);
+
+    const s3Key = `videos/${creatorProfile.id}/${Date.now()}-${crypto.randomUUID()}.mp4`;
+
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: S3_BUCKET_NAME,
+        Key: s3Key,
+        Body: fs.createReadStream(outputPath),
+        ContentType: 'video/mp4',
+      })
+    );
+
+    const originalSizeBytes = fs.statSync(inputPath).size;
+    const processedSizeBytes = fs.statSync(outputPath).size;
+
+    removeFileIfExists(inputPath);
+    removeFileIfExists(outputPath);
+
+    return res.status(200).json({
+      message: 'Video uploaded and processed successfully',
+      key: s3Key,
+      fileUrl: buildMediaUrl(s3Key),
+      original_size_bytes: originalSizeBytes,
+      processed_size_bytes: processedSizeBytes,
+    });
+  } catch (error) {
+    removeFileIfExists(inputPath);
+    removeFileIfExists(outputPath);
+
+    return res.status(500).json({
+      message: 'Failed to process uploaded video',
+      error: error.message,
+    });
+  }
 }
 
 async function createVideoUploadUrl(req, res) {
@@ -1402,6 +1514,7 @@ async function deleteAdminVideo(req, res) {
 
 module.exports = {
   createVideoUploadUrl,
+  uploadProcessedVideoFile,
   createVideo,
   getMyVideos,
   getPublicVideos,

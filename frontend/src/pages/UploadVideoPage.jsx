@@ -12,6 +12,7 @@ import {
   getTags,
   requestVideoUploadUrl,
   uploadFileToSignedUrl,
+  uploadVideoFileToBackend,
 } from '../services/uploadVideoService';
 
 function normalizeArrayResponse(data) {
@@ -406,6 +407,25 @@ function UploadVideoPage() {
     return key;
   }
 
+  async function uploadMainVideoFile(file, progressStart = 0, progressEnd = 100) {
+    const response = await uploadVideoFileToBackend(file, (percent) => {
+      const scaled =
+        progressStart + ((progressEnd - progressStart) * Number(percent || 0)) / 100;
+      setUploadPercent(Math.round(scaled));
+    });
+
+    const key =
+      response?.key ||
+      response?.data?.key ||
+      response?.fileKey;
+
+    if (!key) {
+      throw new Error('Processed video upload response is incomplete');
+    }
+
+    return key;
+  }
+
   function handleGoToSubscription() {
     window.location.href = '/creator-subscription';
   }
@@ -451,8 +471,8 @@ function UploadVideoPage() {
       let shortThumbnailKey = existingShortThumb;
 
       if (formData.video_file) {
-        setUploadStage('Uploading video file...');
-        videoKey = await uploadAsset(formData.video_file, 'videos', 0, 60);
+        setUploadStage('Processing video file...');
+        videoKey = await uploadMainVideoFile(formData.video_file, 0, 60);
       }
 
       if (formData.thumbnail_file) {
@@ -868,7 +888,9 @@ function UploadVideoPage() {
               {formData.video_file ? (
                 <div className="upload-file-meta">
                   <strong>{formData.video_file.name}</strong>
-                  <span>This new file will replace the current video after save.</span>
+                  <span>
+                    This new file will be processed, compressed, and replace the current video after save.
+                  </span>
                   <button
                     type="button"
                     className="upload-clear-btn"
