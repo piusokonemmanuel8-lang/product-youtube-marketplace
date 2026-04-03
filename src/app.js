@@ -161,7 +161,7 @@ app.use('/api', watchHistoryRoutes);
 app.use('/api', savedVideoRoutes);
 app.use('/api', creatorDashboardRoutes);
 app.use('/api/creator-earnings', creatorEarningsRoutes);
-app.use('/api', analyticsRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api', moderationRoutes);
 app.use('/api', payoutRoutes);
 app.use('/api', notificationRoutes);
