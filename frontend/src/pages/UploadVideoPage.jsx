@@ -93,6 +93,25 @@ function getAssetKey(video, primaryKey, fallbackKey = '') {
   return video[primaryKey] || video[fallbackKey] || '';
 }
 
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0 B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size.toFixed(size >= 100 || unitIndex === 0 ? 0 : 2)} ${units[unitIndex]}`;
+}
+
 function UploadVideoPage() {
   const searchParams = new URLSearchParams(window.location.search);
   const editVideoId = searchParams.get('edit');
@@ -114,6 +133,7 @@ function UploadVideoPage() {
   const [subscribingPlanId, setSubscribingPlanId] = useState('');
   const [editingVideo, setEditingVideo] = useState(null);
   const [showUpgradeButton, setShowUpgradeButton] = useState(false);
+  const [compressionInfo, setCompressionInfo] = useState(null);
 
   const [formData, setFormData] = useState({
     category_id: '',
@@ -423,6 +443,31 @@ function UploadVideoPage() {
       throw new Error('Processed video upload response is incomplete');
     }
 
+    const originalSizeBytes = Number(
+      response?.original_size_bytes ?? response?.data?.original_size_bytes ?? 0
+    );
+
+    const processedSizeBytes = Number(
+      response?.processed_size_bytes ?? response?.data?.processed_size_bytes ?? 0
+    );
+
+    const savedBytes =
+      originalSizeBytes > processedSizeBytes
+        ? originalSizeBytes - processedSizeBytes
+        : 0;
+
+    const savedPercent =
+      originalSizeBytes > 0 && savedBytes > 0
+        ? Math.round((savedBytes / originalSizeBytes) * 100)
+        : 0;
+
+    setCompressionInfo({
+      originalSizeBytes,
+      processedSizeBytes,
+      savedBytes,
+      savedPercent,
+    });
+
     return key;
   }
 
@@ -439,6 +484,7 @@ function UploadVideoPage() {
     setShowUpgradeButton(false);
     setUploadStage(isEditMode ? 'Saving changes...' : 'Preparing upload...');
     setUploadPercent(0);
+    setCompressionInfo(null);
 
     try {
       if (!channelId) {
@@ -679,6 +725,16 @@ function UploadVideoPage() {
 
         {pageMessage ? (
           <div className="upload-inline-message success">{pageMessage}</div>
+        ) : null}
+
+        {compressionInfo ? (
+          <div className="upload-inline-message success">
+            <strong>Compression result:</strong>{' '}
+            Original {formatBytes(compressionInfo.originalSizeBytes)} | Final{' '}
+            {formatBytes(compressionInfo.processedSizeBytes)} | Saved{' '}
+            {formatBytes(compressionInfo.savedBytes)}
+            {compressionInfo.savedPercent > 0 ? ` (${compressionInfo.savedPercent}%)` : ''}
+          </div>
         ) : null}
 
         {(submitting || uploadStage || uploadPercent > 0) ? (
