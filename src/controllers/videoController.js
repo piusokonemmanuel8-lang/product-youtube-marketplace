@@ -34,6 +34,15 @@ const CLOUDFRONT_URL =
   process.env.CLOUDFRONT_URL ||
   '';
 
+const ALLOWED_CTA_LABELS = [
+  'Buy Now',
+  'Shop Now',
+  'Learn More',
+  'Get Offer',
+  'Order Now',
+  'Visit Store',
+];
+
 function buildMediaUrl(key) {
   if (!key) {
     return null;
@@ -61,6 +70,20 @@ function resolveVideoFormat(durationSeconds) {
   return seconds > 0 && seconds <= 60 ? 'short' : 'regular';
 }
 
+function normalizeCtaLabel(value) {
+  const raw = String(value || '').trim();
+
+  if (!raw) {
+    return 'Buy Now';
+  }
+
+  const matched = ALLOWED_CTA_LABELS.find(
+    (label) => label.toLowerCase() === raw.toLowerCase()
+  );
+
+  return matched || 'Buy Now';
+}
+
 function normalizeVideoRow(video) {
   if (!video) return video;
 
@@ -81,6 +104,7 @@ function normalizeVideoRow(video) {
 
   return {
     ...video,
+    cta_label: normalizeCtaLabel(video.cta_label),
     video_url: video.video_url || buildMediaUrl(video.video_key),
     thumbnail_url: video.thumbnail_url || buildMediaUrl(video.thumbnail_key),
     short_thumbnail_url:
@@ -600,6 +624,7 @@ async function createVideo(req, res) {
       comments_enabled,
       buy_now_enabled,
       buy_now_url,
+      cta_label,
       is_monetized,
     } = req.body;
 
@@ -625,6 +650,7 @@ async function createVideo(req, res) {
     const cleanBuyNowUrl = normalizeBuyNowUrl(buy_now_url);
     const finalDurationSeconds = Number(duration_seconds || 0);
     const finalVideoFormat = resolveVideoFormat(finalDurationSeconds);
+    const finalCtaLabel = normalizeCtaLabel(cta_label);
 
     if (buy_now_enabled == 1 && cleanBuyNowUrl === null) {
       return res.status(400).json({
@@ -724,12 +750,13 @@ async function createVideo(req, res) {
         moderation_status,
         comments_enabled,
         buy_now_enabled,
+        cta_label,
         buy_now_url,
         uses_external_link,
         external_link_subscription_required,
         is_monetized
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         videoUuid,
         creatorProfile.id,
@@ -753,6 +780,7 @@ async function createVideo(req, res) {
         'pending',
         comments_enabled !== undefined ? comments_enabled : 1,
         buy_now_enabled !== undefined ? buy_now_enabled : 1,
+        finalCtaLabel,
         cleanBuyNowUrl !== undefined ? cleanBuyNowUrl : null,
         usesExternalLink ? 1 : 0,
         usesExternalLink ? 1 : 0,
@@ -857,6 +885,7 @@ async function getPublicVideos(req, res) {
         v.moderation_status,
         v.comments_enabled,
         v.buy_now_enabled,
+        v.cta_label,
         v.buy_now_url,
         v.uses_external_link,
         v.external_link_subscription_required,
@@ -924,6 +953,7 @@ async function getPublicVideos(req, res) {
           moderation_status: video.moderation_status,
           comments_enabled: video.comments_enabled,
           buy_now_enabled: video.buy_now_enabled,
+          cta_label: video.cta_label,
           buy_now_url: video.buy_now_url,
           uses_external_link: Number(video.uses_external_link || 0),
           external_link_subscription_required: Number(
@@ -1186,6 +1216,7 @@ async function updateMyVideo(req, res) {
       moderation_status,
       comments_enabled,
       buy_now_enabled,
+      cta_label,
       buy_now_url,
       is_monetized,
       published_at,
@@ -1300,6 +1331,10 @@ async function updateMyVideo(req, res) {
         : Number(currentVideo.duration_seconds || 0);
 
     const finalVideoFormat = resolveVideoFormat(finalDurationSeconds);
+    const finalCtaLabel =
+      cta_label !== undefined
+        ? normalizeCtaLabel(cta_label)
+        : normalizeCtaLabel(currentVideo.cta_label);
 
     const finalShortThumbnailKey =
       short_thumbnail_key !== undefined
@@ -1369,6 +1404,7 @@ async function updateMyVideo(req, res) {
            moderation_status = ?,
            comments_enabled = ?,
            buy_now_enabled = ?,
+           cta_label = ?,
            buy_now_url = ?,
            uses_external_link = ?,
            external_link_subscription_required = ?,
@@ -1396,6 +1432,7 @@ async function updateMyVideo(req, res) {
         finalModerationStatusValue,
         comments_enabled !== undefined ? comments_enabled : currentVideo.comments_enabled,
         finalBuyNowEnabled,
+        finalCtaLabel,
         finalBuyNowUrl,
         finalVideoUsesExternalLink ? 1 : 0,
         finalVideoUsesExternalLink ? 1 : 0,

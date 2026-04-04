@@ -15,6 +15,15 @@ import {
   uploadVideoFileToBackend,
 } from '../services/uploadVideoService';
 
+const CTA_OPTIONS = [
+  'Buy Now',
+  'Shop Now',
+  'Learn More',
+  'Get Offer',
+  'Order Now',
+  'Visit Store',
+];
+
 function normalizeArrayResponse(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.data)) return data.data;
@@ -39,6 +48,12 @@ function normalizeBuyLink(url = '') {
   }
 
   return `https://${trimmed}`;
+}
+
+function normalizeCtaLabel(value = '') {
+  const raw = String(value || '').trim();
+  const matched = CTA_OPTIONS.find((option) => option.toLowerCase() === raw.toLowerCase());
+  return matched || 'Buy Now';
 }
 
 function isExternalUrl(url = '') {
@@ -140,6 +155,7 @@ function UploadVideoPage() {
     title: '',
     slug: '',
     description: '',
+    cta_label: 'Buy Now',
     buy_link: '',
     duration_seconds: '120',
     visibility: 'public',
@@ -248,6 +264,7 @@ function UploadVideoPage() {
             title: currentVideo.title || '',
             slug: currentVideo.slug || '',
             description: currentVideo.description || '',
+            cta_label: normalizeCtaLabel(currentVideo.cta_label),
             buy_link: currentVideo.buy_now_url || currentVideo.buy_link || '',
             duration_seconds: currentVideo.duration_seconds
               ? String(currentVideo.duration_seconds)
@@ -552,6 +569,7 @@ function UploadVideoPage() {
         title: formData.title.trim(),
         slug: formData.slug.trim(),
         description: formData.description.trim(),
+        cta_label: normalizeCtaLabel(formData.cta_label),
         duration_seconds: Number(formData.duration_seconds || 0),
         visibility: formData.visibility,
         comments_enabled: formData.comments_enabled ? 1 : 0,
@@ -637,6 +655,7 @@ function UploadVideoPage() {
           title: '',
           slug: '',
           description: '',
+          cta_label: 'Buy Now',
           buy_link: '',
           duration_seconds: '120',
           visibility: 'public',
@@ -845,6 +864,21 @@ function UploadVideoPage() {
 
           <div className="form-grid">
             <div className="form-group">
+              <label>Call To Action</label>
+              <select
+                name="cta_label"
+                value={formData.cta_label}
+                onChange={handleChange}
+              >
+                {CTA_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
               <label>Buy Link</label>
               <input
                 type="text"
@@ -855,7 +889,9 @@ function UploadVideoPage() {
                 required
               />
             </div>
+          </div>
 
+          <div className="form-grid">
             <div className="form-group">
               <label>Category</label>
               <select
@@ -868,6 +904,19 @@ function UploadVideoPage() {
                     {category.name || category.title || `Category ${category.id}`}
                   </option>
                 ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Visibility</label>
+              <select
+                name="visibility"
+                value={formData.visibility}
+                onChange={handleChange}
+              >
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+                <option value="unlisted">Unlisted</option>
               </select>
             </div>
           </div>
@@ -897,16 +946,50 @@ function UploadVideoPage() {
             </div>
 
             <div className="form-group">
-              <label>Visibility</label>
-              <select
-                name="visibility"
-                value={formData.visibility}
+              <label>{isEditMode ? 'Replace Thumbnail (Optional)' : 'Thumbnail Upload'}</label>
+
+              {isEditMode && currentThumbnailUrl ? (
+                <div className="upload-existing-asset-card">
+                  <div className="upload-existing-asset-top">
+                    <strong>Current thumbnail</strong>
+                    <span>{currentThumbnailKey || 'Existing thumbnail kept unless replaced'}</span>
+                  </div>
+
+                  <div className="upload-existing-image-wrap">
+                    <img
+                      className="upload-existing-image"
+                      src={currentThumbnailUrl}
+                      alt="Current thumbnail"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              <input
+                type="file"
+                name="thumbnail_file"
+                accept="image/*"
                 onChange={handleChange}
-              >
-                <option value="public">Public</option>
-                <option value="private">Private</option>
-                <option value="unlisted">Unlisted</option>
-              </select>
+                required={!isEditMode}
+              />
+
+              {formData.thumbnail_file ? (
+                <div className="upload-file-meta">
+                  <strong>{formData.thumbnail_file.name}</strong>
+                  <span>This new file will replace the current thumbnail after save.</span>
+                  <button
+                    type="button"
+                    className="upload-clear-btn"
+                    onClick={() => clearSelectedFile('thumbnail_file')}
+                  >
+                    Clear selected replacement
+                  </button>
+                </div>
+              ) : isEditMode && editingVideo?.thumbnail_key ? (
+                <div className="upload-file-meta">
+                  <strong>Keeping current thumbnail</strong>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -964,20 +1047,24 @@ function UploadVideoPage() {
             </div>
 
             <div className="form-group">
-              <label>{isEditMode ? 'Replace Thumbnail (Optional)' : 'Thumbnail Upload'}</label>
+              <label>
+                {isEditMode ? 'Replace Short Thumbnail (Optional)' : 'Short Thumbnail Upload'}
+              </label>
 
-              {isEditMode && currentThumbnailUrl ? (
+              {isEditMode && currentShortThumbnailUrl ? (
                 <div className="upload-existing-asset-card">
                   <div className="upload-existing-asset-top">
-                    <strong>Current thumbnail</strong>
-                    <span>{currentThumbnailKey || 'Existing thumbnail kept unless replaced'}</span>
+                    <strong>Current short thumbnail</strong>
+                    <span>
+                      {currentShortThumbnailKey || 'Existing short thumbnail kept unless replaced'}
+                    </span>
                   </div>
 
                   <div className="upload-existing-image-wrap">
                     <img
                       className="upload-existing-image"
-                      src={currentThumbnailUrl}
-                      alt="Current thumbnail"
+                      src={currentShortThumbnailUrl}
+                      alt="Current short thumbnail"
                     />
                   </div>
                 </div>
@@ -985,89 +1072,38 @@ function UploadVideoPage() {
 
               <input
                 type="file"
-                name="thumbnail_file"
+                name="short_thumbnail_file"
                 accept="image/*"
                 onChange={handleChange}
                 required={!isEditMode}
               />
 
-              {formData.thumbnail_file ? (
+              {formData.short_thumbnail_file ? (
                 <div className="upload-file-meta">
-                  <strong>{formData.thumbnail_file.name}</strong>
-                  <span>This new file will replace the current thumbnail after save.</span>
+                  <strong>{formData.short_thumbnail_file.name}</strong>
+                  <span>This new file will replace the current short thumbnail after save.</span>
                   <button
                     type="button"
                     className="upload-clear-btn"
-                    onClick={() => clearSelectedFile('thumbnail_file')}
+                    onClick={() => clearSelectedFile('short_thumbnail_file')}
                   >
                     Clear selected replacement
                   </button>
                 </div>
-              ) : isEditMode && editingVideo?.thumbnail_key ? (
-                <div className="upload-file-meta">
-                  <strong>Keeping current thumbnail</strong>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label>
-              {isEditMode ? 'Replace Short Thumbnail (Optional)' : 'Short Thumbnail Upload'}
-            </label>
-
-            {isEditMode && currentShortThumbnailUrl ? (
-              <div className="upload-existing-asset-card">
-                <div className="upload-existing-asset-top">
-                  <strong>Current short thumbnail</strong>
-                  <span>
-                    {currentShortThumbnailKey || 'Existing short thumbnail kept unless replaced'}
-                  </span>
-                </div>
-
-                <div className="upload-existing-image-wrap">
-                  <img
-                    className="upload-existing-image"
-                    src={currentShortThumbnailUrl}
-                    alt="Current short thumbnail"
-                  />
-                </div>
-              </div>
-            ) : null}
-
-            <input
-              type="file"
-              name="short_thumbnail_file"
-              accept="image/*"
-              onChange={handleChange}
-              required={!isEditMode}
-            />
-
-            {formData.short_thumbnail_file ? (
-              <div className="upload-file-meta">
-                <strong>{formData.short_thumbnail_file.name}</strong>
-                <span>This new file will replace the current short thumbnail after save.</span>
-                <button
-                  type="button"
-                  className="upload-clear-btn"
-                  onClick={() => clearSelectedFile('short_thumbnail_file')}
-                >
-                  Clear selected replacement
-                </button>
-              </div>
-            ) : isEditMode && (
+              ) : isEditMode && (
               editingVideo?.short_thumbnail_key ||
               editingVideo?.shortThumbnailKey
             ) ? (
-              <div className="upload-file-meta">
-                <strong>Keeping current short thumbnail</strong>
-              </div>
-            ) : (
-              <div className="upload-file-meta">
-                <strong>Short thumbnail is compulsory</strong>
-                <span>This will be used in the Shorts section.</span>
-              </div>
-            )}
+                <div className="upload-file-meta">
+                  <strong>Keeping current short thumbnail</strong>
+                </div>
+              ) : (
+                <div className="upload-file-meta">
+                  <strong>Short thumbnail is compulsory</strong>
+                  <span>This will be used in the Shorts section.</span>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="form-group">

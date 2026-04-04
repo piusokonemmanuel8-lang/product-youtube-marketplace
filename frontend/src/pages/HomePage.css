@@ -763,10 +763,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
 }
 
 button.vg-card-btn {
   appearance: none;
+}
+
+.vg-card-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
 }
 
 .home-layout-light .vg-card-btn {
@@ -787,6 +793,73 @@ button.vg-card-btn {
 .home-layout-dark .vg-card-btn-light {
   background: #1f2638;
   color: #fff;
+}
+
+/* CTA COLORS */
+.vg-card-btn-light.cta-buy-now {
+  background: #111827;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(17, 24, 39, 0.18);
+}
+
+.vg-card-btn-light.cta-shop-now {
+  background: #16a34a;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(22, 163, 74, 0.22);
+}
+
+.vg-card-btn-light.cta-learn-more {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
+}
+
+.vg-card-btn-light.cta-get-offer {
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(220, 38, 38, 0.22);
+}
+
+.vg-card-btn-light.cta-order-now {
+  background: #facc15;
+  color: #111827;
+  box-shadow: 0 8px 18px rgba(250, 204, 21, 0.28);
+}
+
+.vg-card-btn-light.cta-visit-store {
+  background: #7c3aed;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(124, 58, 237, 0.22);
+}
+
+.home-layout-dark .vg-card-btn-light.cta-buy-now {
+  background: #111827;
+  color: #ffffff;
+}
+
+.home-layout-dark .vg-card-btn-light.cta-shop-now {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.home-layout-dark .vg-card-btn-light.cta-learn-more {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.home-layout-dark .vg-card-btn-light.cta-get-offer {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.home-layout-dark .vg-card-btn-light.cta-order-now {
+  background: #facc15;
+  color: #111827;
+}
+
+.home-layout-dark .vg-card-btn-light.cta-visit-store {
+  background: #7c3aed;
+  color: #ffffff;
 }
 
 .shorts-head {

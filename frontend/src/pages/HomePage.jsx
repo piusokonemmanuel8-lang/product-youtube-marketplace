@@ -39,6 +39,24 @@ function formatViews(value) {
   return `${formatCompactNumber(value)} views`;
 }
 
+function normalizeCtaLabel(value) {
+  const raw = String(value || '').trim();
+  return raw || 'Buy Now';
+}
+
+function getCtaClassName(label) {
+  const value = String(label || '').trim().toLowerCase();
+
+  if (value === 'buy now') return 'cta-buy-now';
+  if (value === 'shop now') return 'cta-shop-now';
+  if (value === 'learn more') return 'cta-learn-more';
+  if (value === 'get offer') return 'cta-get-offer';
+  if (value === 'order now') return 'cta-order-now';
+  if (value === 'visit store') return 'cta-visit-store';
+
+  return 'cta-buy-now';
+}
+
 function resolveVideoFormat(item) {
   const directFormat =
     item?.video_format ||
@@ -91,6 +109,7 @@ function unwrapVideoItem(item) {
     short_thumbnail_url: video?.short_thumbnail_url || item?.short_thumbnail_url,
     short_thumbnail_key: video?.short_thumbnail_key || item?.short_thumbnail_key,
     video_url: video?.video_url || item?.video_url,
+    cta_label: normalizeCtaLabel(video?.cta_label || item?.cta_label),
     buy_now_url: video?.buy_now_url || item?.buy_now_url,
     buy_now_enabled:
       video?.buy_now_enabled ??
@@ -233,6 +252,8 @@ function VideoCard({ video }) {
   const details = formatVideoMeta(video);
   const cardKey = video?.id || video?.video_id || video?.slug || Math.random().toString(36);
   const thumbnailUrl = video?.thumbnail_url || '';
+  const ctaLabel = normalizeCtaLabel(video?.cta_label);
+  const ctaClassName = getCtaClassName(ctaLabel);
 
   if (isPlaceholder) {
     return (
@@ -249,7 +270,7 @@ function VideoCard({ video }) {
 
           <div className="vg-card-actions">
             <span className="vg-card-btn">Watch</span>
-            <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
+            <span className={`vg-card-btn vg-card-btn-light ${ctaClassName}`}>{ctaLabel}</span>
           </div>
         </div>
       </div>
@@ -297,13 +318,13 @@ function VideoCard({ video }) {
           {video?.buy_now_enabled == 1 && video?.buy_now_url ? (
             <button
               type="button"
-              className="vg-card-btn vg-card-btn-light"
+              className={`vg-card-btn vg-card-btn-light ${ctaClassName}`}
               onClick={() => openBuyNow(video)}
             >
-              Buy Now
+              {ctaLabel}
             </button>
           ) : (
-            <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
+            <span className={`vg-card-btn vg-card-btn-light ${ctaClassName}`}>{ctaLabel}</span>
           )}
         </div>
       </div>
@@ -320,6 +341,8 @@ function ShortCard({ video }) {
     video?.thumbnail_url ||
     '';
   const details = formatVideoMeta(video);
+  const ctaLabel = normalizeCtaLabel(video?.cta_label);
+  const ctaClassName = getCtaClassName(ctaLabel);
 
   if (isPlaceholder) {
     return (
@@ -333,7 +356,7 @@ function ShortCard({ video }) {
 
         <div className="vg-card-actions" style={{ marginTop: '10px' }}>
           <span className="vg-card-btn">Watch</span>
-          <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
+          <span className={`vg-card-btn vg-card-btn-light ${ctaClassName}`}>{ctaLabel}</span>
         </div>
       </div>
     );
@@ -394,13 +417,13 @@ function ShortCard({ video }) {
         {video?.buy_now_enabled == 1 && video?.buy_now_url ? (
           <button
             type="button"
-            className="vg-card-btn vg-card-btn-light"
+            className={`vg-card-btn vg-card-btn-light ${ctaClassName}`}
             onClick={() => openBuyNow(video)}
           >
-            Buy Now
+            {ctaLabel}
           </button>
         ) : (
-          <span className="vg-card-btn vg-card-btn-light">Buy Now</span>
+          <span className={`vg-card-btn vg-card-btn-light ${ctaClassName}`}>{ctaLabel}</span>
         )}
       </div>
     </div>
